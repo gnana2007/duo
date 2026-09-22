@@ -199,61 +199,50 @@ class MemoryManager:
         """
         h, w = frame_bgr.shape[:2]
 
-        binary = (alpha_mask > 0.40).astype(np.uint8)
-        contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        if not contours:
+        binary = (alpha_mask > 0.04).astype(np.uint8)
+        if not np.any(binary):
             return None
 
-        # Encompass all visible people in the frame
-        valid_contours = [c for c in contours if cv2.contourArea(c) > 1000]
-        if not valid_contours:
-            valid_contours = [max(contours, key=cv2.contourArea)]
-        if cv2.contourArea(valid_contours[0]) < 300:
+        # Encompass ALL person pixels (including thin fingers, peace signs, and hair)
+        bx, by, bw, bh = cv2.boundingRect(binary)
+        if bw < 10 or bh < 10:
             return None
 
-        all_pts = np.vstack(valid_contours)
-        x, y, bw, bh = cv2.boundingRect(all_pts)
-
-        # Snug bounding box with minimal padding (8px)
-        pad = 8
-        x1 = max(0, x - pad)
-        y1 = max(0, y - pad)
-        x2 = min(w, x + bw + pad)
-        y2 = min(h, y + bh + pad)
+        # Generous safety padding (48px) to guarantee zero clipping of fingers or gestures
+        pad = 48
+        x1 = max(0, bx - pad)
+        y1 = max(0, by - pad)
+        x2 = min(w, bx + bw + pad)
+        y2 = min(h, by + bh + pad)
         bw = x2 - x1
         bh = y2 - y1
 
         roi_bgr = frame_bgr[y1:y2, x1:x2].copy()
         raw_roi_alpha = alpha_mask[y1:y2, x1:x2].copy()
 
-        # ── Step 1: Create crisp, solid alpha mask (solid 1.0 body, smooth 1-2px edge) ──
-        # Any pixel > 0.55 is definitely the visitor: solid 1.0 opacity (zero translucency!)
-        # Any pixel < 0.35 is room background: 0.0 (zero ghost bleed!)
-        # Smooth transition between 0.35 and 0.55
+        # ── Step 1: Smooth S-curve preserving fine fingers, gestures, and hair ──
+        # Any confidence > 0.40 becomes solid 1.0 opacity (zero translucency on clothing/body)
+        # Any confidence < 0.10 fades smoothly to background
         clean_alpha = np.zeros_like(raw_roi_alpha, dtype=np.float32)
-        span = 0.20
-        t = np.clip((raw_roi_alpha - 0.35) / span, 0.0, 1.0)
+        span = 0.30
+        t = np.clip((raw_roi_alpha - 0.10) / span, 0.0, 1.0)
         clean_alpha = t * t * (3.0 - 2.0 * t)
 
-        # ── Step 2: Boundary defringing (outer 1-2px only, interior 100% untouched) ──
-        # Authentic interior pixels (clean_alpha >= 0.70) are preserved with zero blur.
-        # Outer rim pixels (0.02 < clean_alpha < 0.70) receive color from adjacent body
-        # to cleanly eliminate white room lighting or cardboard-box halos.
+        # ── Step 2: Multi-scale boundary color extension (eliminates black/dark halos) ──
+        # Propagate inner body colors into the boundary transition zone (alpha between 0.01 and 0.70)
+        # so that edge pixels carry authentic skin/clothing color instead of dark room shadow.
         inner = (clean_alpha >= 0.70).astype(np.uint8)
-        border = (clean_alpha > 0.02) & (clean_alpha < 0.70)
+        border = (clean_alpha > 0.01) & (clean_alpha < 0.70)
         if np.any(inner) and np.any(border):
-            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-            dilated_colors = cv2.dilate(roi_bgr * inner[..., None], kernel)
-            dilated_weights = cv2.dilate(inner, kernel)
+            k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (11, 11))
+            dilated_colors = cv2.dilate(roi_bgr * inner[..., None], k, iterations=2)
+            dilated_weights = cv2.dilate(inner, k, iterations=2)
             valid = (dilated_weights > 0) & border
             if np.any(valid):
-                roi_bgr[valid] = (
-                    roi_bgr[valid].astype(np.float32) * 0.40 +
-                    dilated_colors[valid].astype(np.float32) * 0.60
-                ).astype(np.uint8)
+                roi_bgr[valid] = dilated_colors[valid]
 
-        # Zero out background pixels outside the cutout
-        roi_bgr[clean_alpha <= 0.02] = 0
+        # Only clear pixels that are completely transparent
+        roi_bgr[clean_alpha == 0] = 0
 
         # Only feather bottom edge if the person was actually cut off at the bottom frame edge
         if y2 >= h - 2 and bh > 12:

@@ -273,28 +273,33 @@ def main():
                 env = scene.current_environment()
                 if scene.is_original_room():
                     display = frame.copy()
+                    if len(memory_mgr.memories) > 0:
+                        # Render frozen temporal clones locked in place
+                        memory_mgr.update_all()
+                        memory_mgr.render_all(display, env)
+                        # Re-composite live person in front so past clones never cut into live visitor
+                        fg_alpha = np.clip((cached_mask - 0.15) / 0.35, 0.0, 1.0)[..., None]
+                        display = (frame.astype(np.float32) * fg_alpha + display.astype(np.float32) * (1.0 - fg_alpha)).astype(np.uint8)
                 else:
                     bg = scene.get_background()
-                    display = compositor.composite(frame, bg, cached_mask, cached_shadow, env)
-
-                # Apply Active Temporal Mode (Echo, Paradox, Rift, Anomaly)
-                display = mode_mgr.process_frame(display, cached_mask, cached_hands, cached_poses)
-
-                # Render Frozen Temporal Clones / Timelapse Photos (Locked in place)
-                memory_mgr.update_all()
-                memory_mgr.render_all(display, env)
+                    # Render past clones onto the virtual environment background
+                    memory_mgr.update_all()
+                    canvas = bg.copy()
+                    memory_mgr.render_all(canvas, env)
+                    # Composite live person on top of the virtual scene + past clones
+                    display = compositor.composite(frame, canvas, cached_mask, cached_shadow, env)
 
                 # ── LIVE INTERACTIONS ──
                 if app_state == settings.STATE_LIVE:
-                    # Timeline navigation via double-palm swipe (requires 2 swipes)
-                    swipe = motion_tracker.update(cached_hands)
-                    if swipe != 0:
-                        scene.trigger_swipe(swipe)
+                    # Timeline navigation via Index Finger Pointing: Left (-1) or Right (+1)
+                    triggered_swipe, pointing_prog, pointing_dir = gesture_mgr.check_pointing_swipe(cached_hands)
+                    if triggered_swipe != 0:
+                        scene.trigger_swipe(triggered_swipe)
                         audio.play_whoosh()
 
-                    # Display visual prompt when waiting for second swipe
-                    if motion_tracker.pending_direction != 0:
-                        ui.draw_swipe_prompt(display, motion_tracker.pending_direction)
+                    # Display visual indication on left/right side based on index finger pointing direction
+                    if pointing_dir != 0:
+                        ui.draw_pointing_indicator(display, pointing_dir, pointing_prog)
 
                     # ✊ Closed Fist: Dismisses QR sharing card immediately
                     if gesture_mgr.check_fist(cached_hands):

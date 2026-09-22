@@ -46,12 +46,35 @@ _F_LOCK = _find_font(32, bold=True)
 _F_HINT = _find_font(13)
 
 
+def _overlay_bgra(canvas_bgr: np.ndarray, overlay_bgra: np.ndarray, x: int, y: int):
+    oh, ow = overlay_bgra.shape[:2]
+    ch, cw = canvas_bgr.shape[:2]
+    x1, y1 = max(x, 0), max(y, 0)
+    x2, y2 = min(x + ow, cw), min(y + oh, ch)
+    if x1 >= x2 or y1 >= y2:
+        return
+    ox1, oy1 = x1 - x, y1 - y
+    patch = overlay_bgra[oy1:oy1 + (y2 - y1), ox1:ox1 + (x2 - x1)]
+    alpha = patch[:, :, 3:4].astype(np.float32) / 255.0
+    bgr = patch[:, :, :3].astype(np.float32)
+    roi = canvas_bgr[y1:y2, x1:x2].astype(np.float32)
+    canvas_bgr[y1:y2, x1:x2] = (bgr * alpha + roi * (1.0 - alpha)).astype(np.uint8)
+
+
 class IntroRenderer:
     """Renders the cinematic TimeSensei intro and transition sequence."""
 
     def __init__(self, width: int = settings.CAPTURE_WIDTH, height: int = settings.CAPTURE_HEIGHT):
         self.width = width
         self.height = height
+
+        # Watermark asset (EXPO 2026 Logo)
+        self.watermark = None
+        wm_path = settings.ASSETS_DIR / "watermark.png"
+        if wm_path.exists():
+            wm_raw = cv2.imread(str(wm_path), cv2.IMREAD_UNCHANGED)
+            if wm_raw is not None and wm_raw.shape[2] == 4:
+                self.watermark = cv2.resize(wm_raw, (68, 68), interpolation=cv2.INTER_AREA)
 
         # Button bounds
         self.btn_w = 340
@@ -198,6 +221,10 @@ class IntroRenderer:
             angle = int(self.dwell_progress * 360)
             cv2.ellipse(canvas, (hx, hy), (r, r), -90, 0, angle, (0, 40, 255), 3, cv2.LINE_AA)
 
+        # ── 7. Top-Left EXPO 2026 Watermark Logo ──
+        if self.watermark is not None:
+            _overlay_bgra(canvas, self.watermark, 18, 14)
+
         return canvas, triggered
 
     def render_entering(self, live_frame: np.ndarray, progress: float) -> np.ndarray:
@@ -244,5 +271,9 @@ class IntroRenderer:
 
         cv2.putText(canvas, "TIMELINE LOCKED", (bx + 42, by + 38),
                     cv2.FONT_HERSHEY_DUPLEX, 0.95, (240, 235, 225), 2, cv2.LINE_AA)
+
+        # 4. Top-Left EXPO 2026 Watermark Logo
+        if self.watermark is not None:
+            _overlay_bgra(canvas, self.watermark, 18, 14)
 
         return canvas

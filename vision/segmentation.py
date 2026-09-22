@@ -68,10 +68,10 @@ class PersonSegmenter:
                         (int(sw * 0.35), int(sh * 0.45)), 0, 0, 360, 1.0, -1)
 
         # ── Step 1: Crisp background rejection & Hermite S-curve contrast ──
-        # low_thresh (0.45) drops room background bleed, boxes, and furniture.
-        # high_thresh (0.70) ensures 100% solid opacity across body and clothing.
-        low_thresh = getattr(settings, "MASK_CUTOFF_LOW", 0.45)
-        high_thresh = getattr(settings, "MASK_CUTOFF_HIGH", 0.70)
+        # low_thresh (0.22) preserves thin fingers, peace signs, and hair silhouettes.
+        # high_thresh (0.60) ensures 100% solid opacity across body and clothing.
+        low_thresh = getattr(settings, "MASK_CUTOFF_LOW", 0.22)
+        high_thresh = getattr(settings, "MASK_CUTOFF_HIGH", 0.60)
         span = max(1e-4, high_thresh - low_thresh)
         t = np.clip((raw - low_thresh) / span, 0.0, 1.0)
         enhanced_small = t * t * (3.0 - 2.0 * t)
@@ -79,15 +79,11 @@ class PersonSegmenter:
         # ── Step 2: High-fidelity bicubic upscale to full frame resolution ──
         full_mask = cv2.resize(enhanced_small, (w, h), interpolation=cv2.INTER_CUBIC)
 
-        # ── Step 3: Gentle inward boundary erosion (strips camera-room edge light bleed) ──
-        erode_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        eroded_mask = cv2.erode(full_mask, erode_k, iterations=1)
-
-        # ── Step 4: Subpixel edge anti-aliasing feather ──
+        # ── Step 3: Subpixel edge anti-aliasing feather (no destructive erosion) ──
         ksize = settings.MASK_EDGE_FEATHER * 2 + 1
-        feathered = cv2.GaussianBlur(eroded_mask, (ksize, ksize), 1.2)
+        feathered = cv2.GaussianBlur(full_mask, (ksize, ksize), 1.0)
 
-        # ── Step 5: Ultra-responsive temporal IIR smoothing (zero motion lag) ──
+        # ── Step 4: Ultra-responsive temporal IIR smoothing (zero motion lag) ──
         if self.smoothed_mask is None or self.smoothed_mask.shape != feathered.shape:
             self.smoothed_mask = feathered.copy()
         else:

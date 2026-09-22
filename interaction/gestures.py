@@ -280,3 +280,43 @@ class GestureManager:
         """Checks if any hand coordinate dwells within target circle for duration."""
         inside = any(np.hypot(pt[0] - target_x, pt[1] - target_y) <= radius for pt in hand_pts)
         return self._check_hold_progress("dwell_start", inside, duration, cooldown=1.0)
+
+    # ── 7. 👈👉 Pointing Index Finger: Environment Navigation (Left / Right) ──
+
+    def check_pointing_swipe(self, hands: List[Dict[str, Any]]) -> Tuple[int, float, int]:
+        """
+        Detects index finger pointing to switch environments:
+          - Point Left (-1): Previous Timeline
+          - Point Right (+1): Next Timeline
+        Returns:
+          (triggered_direction: int [-1, 0, 1],
+           progress: float [0..1],
+           active_direction: int [-1, 0, 1])
+        """
+        active_dir = 0
+        for h in hands:
+            # Skip if closed fist, peace sign, or open palm
+            if is_fist(h) or is_peace_sign(h) or h.get("is_open_palm", False):
+                continue
+            pdir = h.get("pointing_direction", 0)
+            if pdir in (-1, 1):
+                active_dir = pdir
+                break
+
+        key_left = "point_left"
+        key_right = "point_right"
+        duration = getattr(settings, "POINTING_HOLD_S", 0.30)
+        cooldown = getattr(settings, "POINTING_COOLDOWN_S", 0.75)
+
+        if active_dir == -1:
+            self._hold.pop(key_right, None)
+            trig, prog = self._check_hold_progress(key_left, True, duration=duration, cooldown=cooldown)
+            return (-1 if trig else 0), prog, -1
+        elif active_dir == 1:
+            self._hold.pop(key_left, None)
+            trig, prog = self._check_hold_progress(key_right, True, duration=duration, cooldown=cooldown)
+            return (1 if trig else 0), prog, 1
+        else:
+            self._check_hold_progress(key_left, False, duration=duration, cooldown=cooldown)
+            self._check_hold_progress(key_right, False, duration=duration, cooldown=cooldown)
+            return 0, 0.0, 0

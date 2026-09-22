@@ -66,6 +66,50 @@ def detect_pointing_up(pts: List[tuple], palm_center: tuple) -> bool:
     return index_up and middle_curled and ring_curled and pinky_curled
 
 
+def detect_pointing_direction(pts: List[tuple], palm_center: tuple) -> int:
+    """
+    Detects horizontal index finger pointing direction:
+      -1: Pointing Left
+      +1: Pointing Right
+       0: Neutral / Not pointing left or right
+    """
+    if not pts or len(pts) < 21:
+        return 0
+
+    palm_cx, palm_cy = palm_center
+    wrist = pts[0]
+    hand_scale = max(20.0, float(np.hypot(palm_cx - wrist[0], palm_cy - wrist[1])))
+
+    # Vector from index MCP (knuckle, joint 5) to index TIP (joint 8)
+    dx = pts[8][0] - pts[5][0]
+    dy = pts[8][1] - pts[5][1]
+    d_index = np.hypot(dx, dy)
+    d_index_palm = np.hypot(pts[8][0] - palm_cx, pts[8][1] - palm_cy)
+
+    # Index finger must be physically extended from knuckle
+    if d_index < hand_scale * 0.70:
+        return 0
+
+    # Horizontal dominance: |dx| must be distinctly larger than |dy|
+    if abs(dx) < abs(dy) * 0.85 or abs(dx) < 25.0:
+        return 0
+
+    # Middle, ring, and pinky fingers must be curled towards palm
+    d_middle = np.hypot(pts[12][0] - palm_cx, pts[12][1] - palm_cy)
+    d_ring = np.hypot(pts[16][0] - palm_cx, pts[16][1] - palm_cy)
+    d_pinky = np.hypot(pts[20][0] - palm_cx, pts[20][1] - palm_cy)
+
+    # Middle finger extension check (distinguishes from peace sign)
+    d_mid_knuckle = np.hypot(pts[12][0] - pts[9][0], pts[12][1] - pts[9][1])
+    if d_mid_knuckle > d_index * 0.75:
+        return 0
+
+    if d_middle > hand_scale * 1.35 or d_ring > hand_scale * 1.30 or d_pinky > hand_scale * 1.30:
+        return 0
+
+    return -1 if dx < 0 else 1
+
+
 def detect_victory(pts: List[tuple], palm_center: tuple, gesture_name: str, confidence: float) -> bool:
     """Robust geometric and ML check for a two-finger Victory / Peace sign (V-shape), rotation-invariant."""
     if gesture_name == "Victory" and confidence >= 0.40:
@@ -248,6 +292,7 @@ class HandTracker:
                 # Geometric enhancements
                 open_palm = detect_open_palm(pts, (palm_cx, palm_cy), gesture_name, confidence)
                 pointing_up = detect_pointing_up(pts, (palm_cx, palm_cy))
+                pointing_dir = detect_pointing_direction(pts, (palm_cx, palm_cy))
                 victory = detect_victory(pts, (palm_cx, palm_cy), gesture_name, confidence)
                 thumb_open = detect_open_thumb(pts, (palm_cx, palm_cy), gesture_name, confidence)
                 fist = detect_fist(pts, (palm_cx, palm_cy), gesture_name, confidence)
@@ -266,6 +311,7 @@ class HandTracker:
                     "is_pinching": is_pinching,
                     "is_open_palm": open_palm,
                     "is_pointing_up": pointing_up,
+                    "pointing_direction": pointing_dir,
                     "is_victory": victory,
                     "is_thumb_open": thumb_open,
                     "is_fist": fist,

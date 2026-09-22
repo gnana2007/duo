@@ -73,6 +73,21 @@ class UIRenderer:
         self.tutorial_step = 0
         self.tutorial_step_time = time.time()
 
+        # Watermark asset (EXPO 2026 Logo)
+        self.watermark_hud = None
+        self.watermark_capture = None
+        self.watermark_mini = None
+        wm_path = settings.ASSETS_DIR / "watermark.png"
+        if wm_path.exists():
+            wm_raw = cv2.imread(str(wm_path), cv2.IMREAD_UNCHANGED)
+            if wm_raw is not None and wm_raw.shape[2] == 4:
+                # 68x68 for HUD top-left
+                self.watermark_hud = cv2.resize(wm_raw, (68, 68), interpolation=cv2.INTER_AREA)
+                # 88x88 for captured photo top-left
+                self.watermark_capture = cv2.resize(wm_raw, (88, 88), interpolation=cv2.INTER_AREA)
+                # 28x28 for QR card popup header
+                self.watermark_mini = cv2.resize(wm_raw, (28, 28), interpolation=cv2.INTER_AREA)
+
     def reset_tutorial(self):
         self.tutorial_step = 0
         self.tutorial_step_time = time.time()
@@ -125,7 +140,13 @@ class UIRenderer:
         """Renders minimal dark glass visitor HUD without echoes clutter."""
         h, w = canvas.shape[:2]
 
-        # Top-Left: Timeline Pill
+        # Top-Left: EXPO 2026 Watermark Logo & Timeline Pill
+        if self.watermark_hud is not None:
+            _overlay_bgra(canvas, self.watermark_hud, 18, 14)
+            pill_x = 94
+        else:
+            pill_x = 16
+
         pill_tl = Image.new("RGBA", (280, 42), (0, 0, 0, 0))
         d_tl = ImageDraw.Draw(pill_tl)
         d_tl.rounded_rectangle([(0, 0), (279, 41)], radius=12,
@@ -134,7 +155,7 @@ class UIRenderer:
         # Accent indicator
         d_tl.ellipse([(12, 16), (20, 24)], fill=(timeline_accent[0], timeline_accent[1], timeline_accent[2], 255))
         d_tl.text((28, 11), f"TIMELINE // {timeline_name.upper()}", font=_F_TITLE, fill=(240, 238, 230, 255))
-        _overlay_bgra(canvas, _pil_to_cv(pill_tl), 16, 16)
+        _overlay_bgra(canvas, _pil_to_cv(pill_tl), pill_x, 16)
 
         # Top-Right: Clean Status / Photo Count Pill
         pill_w = 250 if memory_count > 0 else 220
@@ -155,32 +176,50 @@ class UIRenderer:
         d_h.rounded_rectangle([(0, 0), (bar_w - 1, 33)], radius=10,
                               fill=(12, 14, 18, 175),
                               outline=(60, 65, 80, 150), width=1)
-        hints = "✌️ Peace: Take Photo   •   👍 Thumb: QR Code   •   ✊ Fist: Close QR   •   ✋✋ Double Swipe: Switch World"
+        hints = "✌️ Peace: Take Photo   •   👍 Thumb: QR Code   •   ✊ Fist: Close QR   •   👈👉 Point Left / Right: Switch World"
         tw = d_h.textlength(hints, font=_F_HINT)
         d_h.text(((bar_w - tw) / 2, 8), hints, font=_F_HINT, fill=(195, 200, 210, 230))
         _overlay_bgra(canvas, _pil_to_cv(hints_img), w // 2 - bar_w // 2, h - 48)
 
-    def draw_swipe_prompt(self, canvas: np.ndarray, pending_direction: int):
-        """Displays intuitive visual prompt when 1st swipe is detected, prompting 2nd swipe."""
-        if pending_direction == 0:
+    def draw_pointing_indicator(self, canvas: np.ndarray, direction: int, progress: float = 0.0):
+        """Displays prominent visual indication on left/right side when pointing index finger."""
+        if direction == 0:
             return
         h, w = canvas.shape[:2]
-        direction_str = "NEXT WORLD  ►" if pending_direction > 0 else "◄  PREVIOUS WORLD"
-        msg = f"SWIPE AGAIN TO SWITCH ({direction_str})"
+        is_left = direction < 0
 
-        pill_w = 420
-        pill_h = 38
-        cx = (w - pill_w) // 2
-        cy = h - 96
+        pill_w = 320
+        pill_h = 56
+        cx = 36 if is_left else (w - pill_w - 36)
+        cy = h // 2 - 28
 
         pill = Image.new("RGBA", (pill_w, pill_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(pill)
-        draw.rounded_rectangle([(0, 0), (pill_w - 1, pill_h - 1)], radius=10,
-                               fill=(18, 20, 28, 220),
-                               outline=(80, 190, 240, 240), width=2)
-        tw = draw.textlength(msg, font=_F_STATUS)
-        draw.text(((pill_w - tw) / 2, 9), msg, font=_F_STATUS, fill=(180, 235, 255, 255))
+
+        # Dynamic accent color (Cyan for Left, Orange/Magenta for Right)
+        border_col = (0, 210, 255, 240) if is_left else (255, 130, 40, 240)
+        bg_col = (10, 18, 28, 225) if is_left else (28, 14, 10, 225)
+        text_col = (200, 245, 255, 255) if is_left else (255, 225, 200, 255)
+
+        draw.rounded_rectangle([(0, 0), (pill_w - 1, pill_h - 1)], radius=14,
+                               fill=bg_col, outline=border_col, width=2)
+
+        # Directional text
+        title = "◄ PREVIOUS TIMELINE" if is_left else "NEXT TIMELINE ►"
+        tw = draw.textlength(title, font=_F_STATUS)
+        draw.text(((pill_w - tw) / 2, 10), title, font=_F_STATUS, fill=text_col)
+
+        # Progress bar at bottom of pill
+        prog_w = int((pill_w - 24) * np.clip(progress, 0.0, 1.0))
+        if prog_w > 0:
+            fill_col = (0, 240, 255, 255) if is_left else (255, 140, 50, 255)
+            draw.rounded_rectangle([(12, pill_h - 12), (12 + prog_w, pill_h - 6)], radius=3,
+                                   fill=fill_col)
+
         _overlay_bgra(canvas, _pil_to_cv(pill), cx, cy)
+
+    # Alias for backward compatibility with swipe tests
+    draw_swipe_prompt = draw_pointing_indicator
 
     def draw_micro_tutorial(self, canvas: np.ndarray, has_person: bool, memory_count: int = 0):
         """Minimal onboarding prompt."""
@@ -312,6 +351,9 @@ class UIRenderer:
 
         _overlay_bgra(canvas, _pil_to_cv(card), cx, cy)
 
+        if self.watermark_mini is not None:
+            _overlay_bgra(canvas, self.watermark_mini, cx + 12, cy + 5)
+
         # Draw thumbnail on left if present
         qr_x = cx + (card_w - qr_size) // 2
         qr_y = cy + 34
@@ -360,9 +402,17 @@ class UIRenderer:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.44, color, 1, cv2.LINE_AA)
 
     def apply_watermark(self, photo_bgr: np.ndarray) -> np.ndarray:
-        """Applies subtle TimeSensei watermark to captured photo."""
+        """Applies EXPO 2026 watermark at the top-left of captured photo."""
         h, w = photo_bgr.shape[:2]
         watermark = photo_bgr.copy()
+
+        # Left-top watermark logo
+        if self.watermark_capture is not None:
+            _overlay_bgra(watermark, self.watermark_capture, 24, 20)
+        elif self.watermark_hud is not None:
+            _overlay_bgra(watermark, self.watermark_hud, 24, 20)
+
+        # Subtle bottom-left text
         text = "TimeSensei // CONTROL YOUR TIMELINE"
         cv2.putText(watermark, text, (32, h - 28),
                     cv2.FONT_HERSHEY_DUPLEX, 0.65, (245, 240, 235), 1, cv2.LINE_AA)

@@ -113,6 +113,11 @@ def download_image(photo_id):
     )
 
 
+@app.route("/assets/<path:filename>")
+def get_asset(filename):
+    return send_from_directory(str(settings.ASSETS_DIR), filename)
+
+
 def _find_available_port(start_port: int, host: str = "0.0.0.0") -> int:
     import socket
     port = start_port

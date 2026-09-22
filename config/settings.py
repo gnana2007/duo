@@ -34,7 +34,7 @@ CAMERA_RETRY_DELAY_S = 0.8
 VISION_WIDTH = 480
 VISION_HEIGHT = 270
 SEG_EVERY_N = 1                   # Run segmentation every frame for zero edge lag
-HAND_EVERY_N = 2
+HAND_EVERY_N = 1                  # Track hands every frame for zero-lag gesture/swipe tracking
 POSE_EVERY_N = 5
 POSE_OFFSET = 1
 
@@ -42,8 +42,8 @@ POSE_OFFSET = 1
 MASK_TEMPORAL_ALPHA = 0.04        # Ultra-responsive tracking — eliminates motion ghosting
 MASK_MORPH_KERNEL = 3
 MASK_EDGE_FEATHER = 2
-MASK_CUTOFF_LOW = 0.45            # Clean background rejection (drops walls, boxes, furniture)
-MASK_CUTOFF_HIGH = 0.70           # Solid foreground body opacity
+MASK_CUTOFF_LOW = 0.22            # Clean background rejection while preserving thin fingers & gestures
+MASK_CUTOFF_HIGH = 0.60           # Solid foreground body opacity
 
 # ── Capture Zone (Center of Screen) ──
 CAPTURE_ZONE_X_RATIO = 0.375
