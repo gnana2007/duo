@@ -133,7 +133,7 @@ def main():
     env_manager.set_original_room(clean_bg)
     scene = Scene(env_manager)
 
-    # ── 8. Temporal Interaction & Memory Systems ──
+    # ── 8. Interaction Systems ──
     memory_mgr = MemoryManager()
     interaction_detector = InteractionDetector(audio=audio)
     gesture_mgr = GestureManager()
@@ -163,13 +163,19 @@ def main():
     countdown_start = 0.0
     flash_start = 0.0
     capture_success_time = 0.0
+    last_beep_sec = 0
 
     last_person_seen_time = time.time()
     camera_fail_count = 0
     show_diagnostics = settings.SHOW_DIAGNOSTICS_DEFAULT
 
     last_photo_path = None
-    last_qr_image = None
+    existing_captures = sorted(settings.CAPTURES_DIR.glob("*.jpg"), key=os.path.getmtime, reverse=True)
+    if existing_captures:
+        last_photo_path = str(existing_captures[0])
+        last_qr_image = qr_gen.generate_qr_image(existing_captures[0].stem)
+    else:
+        last_qr_image = qr_gen.generate_qr_url(f"http://{local_lan_ip}:{settings.SHARING_PORT}/")
     show_qr = False
 
     cached_mask = np.zeros((settings.CAPTURE_HEIGHT, settings.CAPTURE_WIDTH), dtype=np.float32)
@@ -274,41 +280,34 @@ def main():
                 # Apply Active Temporal Mode (Echo, Paradox, Rift, Anomaly)
                 display = mode_mgr.process_frame(display, cached_mask, cached_hands, cached_poses)
 
-                # Render Frozen Temporal Clones
+                # Render Frozen Temporal Clones / Timelapse Photos (Locked in place)
                 memory_mgr.update_all()
-                memory_mgr.render_all(display, env.ambient_tint_bgr)
+                memory_mgr.render_all(display, env)
 
                 # ── LIVE INTERACTIONS ──
                 if app_state == settings.STATE_LIVE:
-                    # Timeline navigation via fast single-palm swipe
+                    # Timeline navigation via double-palm swipe (requires 2 swipes)
                     swipe = motion_tracker.update(cached_hands)
                     if swipe != 0:
                         scene.trigger_swipe(swipe)
+                        audio.play_whoosh()
 
-                    # QR Popup toggle: Fist dismisses, Thumb opens
-                    if last_qr_image is not None:
-                        if gesture_mgr.check_fist(cached_hands):
-                            show_qr = False
-                        elif gesture_mgr.check_thumb_trigger(cached_hands):
-                            show_qr = True
+                    # Display visual prompt when waiting for second swipe
+                    if motion_tracker.pending_direction != 0:
+                        ui.draw_swipe_prompt(display, motion_tracker.pending_direction)
 
-                    # ✌️ Signature Gesture: Two-Finger Victory Hold -> FREEZE TIME
-                    freeze_trig, freeze_prog, victory_pos = gesture_mgr.check_victory_freeze(cached_hands, qr_active=show_qr)
-                    if freeze_prog > 0.05 and victory_pos:
-                        ui.draw_victory_freeze_progress(display, victory_pos, freeze_prog)
+                    # ✊ Closed Fist: Dismisses QR sharing card immediately
+                    if gesture_mgr.check_fist(cached_hands):
+                        show_qr = False
+                    # 👍 Open Thumb: Reveals QR sharing card at bottom-right (latches open)
+                    elif gesture_mgr.check_thumb_trigger(cached_hands):
+                        show_qr = True
 
-                    if freeze_trig and person_in_zone:
-                        new_mem = memory_mgr.create_memory(frame, cached_mask)
-                        if new_mem:
-                            audio.play_freeze()
-                            # Re-render clone onto display
-                            memory_mgr.render_all(display, env.ambient_tint_bgr)
-                            capture_success_time = now
-
-                    # Photo Countdown Trigger (Thumbs-Up or P key)
-                    if gesture_mgr.check_capture_trigger(cached_hands):
+                    # ✌️ Peace Sign: Triggers Photo Countdown (Latches immediately, no need to hold)
+                    if gesture_mgr.check_peace_capture(cached_hands):
                         app_state = settings.STATE_COUNTDOWN
                         countdown_start = now
+                        last_beep_sec = 0
 
                     # ☝️ Pointing Up -> Trigger Rewind
                     if gesture_mgr.check_rewind_trigger(cached_hands):
@@ -322,6 +321,11 @@ def main():
                 # ── COUNTDOWN PHASE ──
                 elif app_state == settings.STATE_COUNTDOWN:
                     remaining = settings.COUNTDOWN_SECONDS - (now - countdown_start)
+                    sec_current = int(np.ceil(remaining))
+                    if sec_current != last_beep_sec and sec_current in (1, 2, 3):
+                        audio.play_countdown_beep(sec_current)
+                        last_beep_sec = sec_current
+
                     if remaining <= 0:
                         # Capture Photo with subtle TimeSensei watermark
                         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -333,10 +337,14 @@ def main():
                         last_photo_path = str(path)
                         last_qr_image = qr_gen.generate_qr_image(photo_id)
 
+                        # Lock captured photo of visitor into the timelapse scene!
+                        memory_mgr.create_memory(frame, cached_mask)
+
                         audio.play_shutter()
                         app_state = settings.STATE_FLASH
                         flash_start = now
-                        show_qr = False
+                        show_qr = False  # Visible only after user shows 👍 Open Thumb
+                        capture_success_time = now
                     else:
                         ui.draw_countdown(display, remaining, settings.COUNTDOWN_SECONDS)
 
@@ -358,21 +366,19 @@ def main():
                     timeline_name=env.name,
                     timeline_accent=env.accent_color_bgr,
                     memory_count=len(memory_mgr.memories),
-                    mode_name=mode_mgr.current_mode,
                     fps=fps,
-                    grabbed=memory_mgr.grabbed_memory is not None,
                 )
 
-                # Micro-tutorial for first-time visitors
-                ui.draw_micro_tutorial(display, has_person, len(memory_mgr.memories))
+                # Micro-tutorial for visitors
+                ui.draw_micro_tutorial(display, has_person, memory_count=len(memory_mgr.memories))
 
                 # Capture success banner
                 if capture_success_time > 0 and (now - capture_success_time) < 3.0:
                     ui.draw_capture_success(display)
 
-                # QR Sharing Popup (revealed by 👍, hidden by ✊)
+                # QR Sharing Popup (with Photo Preview thumbnail at bottom-right)
                 if last_qr_image is not None and show_qr:
-                    ui.draw_qr_popup(display, last_qr_image)
+                    ui.draw_qr_popup(display, last_qr_image, photo_path=last_photo_path)
 
             # ────────────────────────────────────────────────────────
             # STATE: ERROR_RECOVERY (Camera reconnection)
@@ -391,7 +397,6 @@ def main():
                     "fps": fps,
                     "num_persons": len(cached_poses),
                     "num_hands": len(cached_hands),
-                    "memory_count": len(memory_mgr.memories),
                     "mode": mode_mgr.current_mode,
                     "audio_enabled": audio.enabled,
                     "app_state": app_state,
@@ -420,26 +425,22 @@ def main():
                 ui.reset_tutorial()
                 show_qr = False
                 app_state = settings.STATE_ATTRACT
-            elif key in (ord('f'), ord('F')) and app_state == settings.STATE_LIVE:  # F -> Force freeze
-                new_mem = memory_mgr.create_memory(frame, cached_mask)
-                if new_mem:
-                    audio.play_freeze()
-                    capture_success_time = time.time()
+            elif key in (ord('c'), ord('C')) and app_state == settings.STATE_LIVE:  # C -> Clear timelapse photos
+                memory_mgr.clear_all()
             elif key in (ord('w'), ord('W')) and app_state == settings.STATE_LIVE:  # W -> Rewind
                 rewind_buf.trigger_rewind()
             elif key in (ord('e'), ord('E')) and app_state == settings.STATE_LIVE:  # E -> Toggle Echo
                 mode_mgr.toggle_echo()
-            elif key in (ord('m'), ord('M')):  # M -> Cycle mode or mute
+            elif key in (ord('m'), ord('M')):  # M -> Cycle mode
                 mode_mgr.cycle_mode()
-            elif key in (ord('c'), ord('C')) and app_state == settings.STATE_LIVE:  # C -> Clear clones
-                memory_mgr.clear_all()
             elif key in (ord('d'), ord('D')):  # D -> Diagnostics
                 show_diagnostics = not show_diagnostics
-            elif key in (ord('t'), ord('T')):  # T -> Show QR
-                show_qr = True
+            elif key in (ord('t'), ord('T')):  # T -> Toggle QR
+                show_qr = not show_qr
             elif key in (ord('p'), ord('P')) and app_state == settings.STATE_LIVE:  # P -> Trigger photo
                 app_state = settings.STATE_COUNTDOWN
                 countdown_start = time.time()
+                last_beep_sec = 0
             elif key in (81, 2, ord('a'), ord('A')):  # Left Arrow -> Previous Timeline
                 scene.trigger_swipe(-1)
             elif key in (83, 3, ord('s'), ord('S')):  # Right Arrow -> Next Timeline

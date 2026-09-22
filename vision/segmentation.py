@@ -67,35 +67,32 @@ class PersonSegmenter:
             cv2.ellipse(raw, (sw // 2, int(sh * 0.65)),
                         (int(sw * 0.35), int(sh * 0.45)), 0, 0, 360, 1.0, -1)
 
-        # ── Step 1: Morphological close (fills clothing textures & small gaps) ──
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (settings.MASK_MORPH_KERNEL, settings.MASK_MORPH_KERNEL))
-        raw_u8 = (np.clip(raw, 0.0, 1.0) * 255.0).astype(np.uint8)
-        closed_u8 = cv2.morphologyEx(raw_u8, cv2.MORPH_CLOSE, kernel)
-        closed_f = closed_u8.astype(np.float32) / 255.0
-
-        # ── Step 2: S-curve contrast enhancement ──
-        # Crisp cutoff: below 0.28 drops background bleed cleanly.
-        # Above 0.60 is 100% solid opacity (no translucent ghosting on body/clothes).
-        # Smooth Hermite cubic curve in between for natural anti-aliased edge.
-        low_thresh = 0.28
-        high_thresh = 0.60
-        span = high_thresh - low_thresh
-        t = np.clip((closed_f - low_thresh) / span, 0.0, 1.0)
+        # ── Step 1: Crisp background rejection & Hermite S-curve contrast ──
+        # low_thresh (0.45) drops room background bleed, boxes, and furniture.
+        # high_thresh (0.70) ensures 100% solid opacity across body and clothing.
+        low_thresh = getattr(settings, "MASK_CUTOFF_LOW", 0.45)
+        high_thresh = getattr(settings, "MASK_CUTOFF_HIGH", 0.70)
+        span = max(1e-4, high_thresh - low_thresh)
+        t = np.clip((raw - low_thresh) / span, 0.0, 1.0)
         enhanced_small = t * t * (3.0 - 2.0 * t)
 
-        # ── Step 3: Bicubic upscale to full frame resolution ──
+        # ── Step 2: High-fidelity bicubic upscale to full frame resolution ──
         full_mask = cv2.resize(enhanced_small, (w, h), interpolation=cv2.INTER_CUBIC)
+
+        # ── Step 3: Gentle inward boundary erosion (strips camera-room edge light bleed) ──
+        erode_k = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        eroded_mask = cv2.erode(full_mask, erode_k, iterations=1)
 
         # ── Step 4: Subpixel edge anti-aliasing feather ──
         ksize = settings.MASK_EDGE_FEATHER * 2 + 1
-        feathered = cv2.GaussianBlur(full_mask, (ksize, ksize), 0)
+        feathered = cv2.GaussianBlur(eroded_mask, (ksize, ksize), 1.2)
 
-        # ── Step 5: Motion-responsive temporal IIR smoothing ──
+        # ── Step 5: Ultra-responsive temporal IIR smoothing (zero motion lag) ──
         if self.smoothed_mask is None or self.smoothed_mask.shape != feathered.shape:
             self.smoothed_mask = feathered.copy()
         else:
             a = settings.MASK_TEMPORAL_ALPHA
-            # Responsive IIR filter: immediately tracks rapid user motion
+            # Responsive IIR: tracks rapid motion immediately without trailing ghost lag
             self.smoothed_mask = a * self.smoothed_mask + (1.0 - a) * feathered
 
         return np.clip(self.smoothed_mask, 0.0, 1.0)

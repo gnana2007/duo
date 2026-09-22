@@ -32,13 +32,10 @@ class QRCodeGenerator:
     def get_share_url(self, photo_id: str) -> str:
         return f"http://{self.local_ip}:{self.port}/photo/{photo_id}"
 
-    def generate_qr_image(self, photo_id: str, size: int = 240) -> np.ndarray:
+    def generate_qr_url(self, url: str, size: int = 240) -> np.ndarray:
         """
-        Generates a crisp QR code BGR image for the given photo ID.
-        Uses `qrcode` library or OpenCV fallback.
+        Generates a crisp QR code BGR image for any given URL.
         """
-        url = self.get_share_url(photo_id)
-
         try:
             import qrcode
             qr = qrcode.QRCode(
@@ -67,3 +64,10 @@ class QRCodeGenerator:
                 dummy = np.full((size, size, 3), 255, dtype=np.uint8)
                 cv2.putText(dummy, "QR CODE", (size // 4, size // 2), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
                 return dummy
+
+    def generate_qr_image(self, photo_id: str, size: int = 240) -> np.ndarray:
+        """
+        Generates a crisp QR code BGR image for the given photo ID.
+        """
+        url = self.get_share_url(photo_id)
+        return self.generate_qr_url(url, size=size)

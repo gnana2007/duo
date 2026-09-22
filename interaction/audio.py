@@ -100,6 +100,22 @@ class TimeSenseiAudio:
         drop = np.sin(2 * np.pi * 65 * t_drp) * np.exp(-t_drp * 18) * 0.5
         self._cache["drop"] = drop.astype(np.float32)
 
+        # 9. Countdown Beeps (Photobooth countdown audio cues)
+        t_bp = np.linspace(0, 0.12, int(sr * 0.12), endpoint=False)
+        beep_low = np.sin(2 * np.pi * 780 * t_bp) * np.exp(-t_bp * 28) * 0.45
+        beep_high = (np.sin(2 * np.pi * 1560 * t_bp) + 0.3 * np.sin(2 * np.pi * 2340 * t_bp)) * np.exp(-t_bp * 25) * 0.55
+        self._cache["beep_low"] = beep_low.astype(np.float32)
+        self._cache["beep_high"] = beep_high.astype(np.float32)
+
+        # 10. Whoosh / Timeline Slide
+        t_wh = np.linspace(0, 0.28, int(sr * 0.28), endpoint=False)
+        noise_wh = np.random.uniform(-1.0, 1.0, len(t_wh))
+        env_wh = np.sin(np.pi * (t_wh / 0.28)) ** 2
+        f_glide = np.linspace(350, 750, len(t_wh))
+        tone_wh = np.sin(2 * np.pi * np.cumsum(f_glide) / sr) * 0.35
+        whoosh = (noise_wh * 0.35 + tone_wh) * env_wh * 0.5
+        self._cache["whoosh"] = whoosh.astype(np.float32)
+
     def _play_raw(self, audio_data: np.ndarray):
         if not self.enabled:
             return
@@ -146,6 +162,18 @@ class TimeSenseiAudio:
 
     def play_shutter(self):
         clip = self._cache.get("shutter")
+        if clip is not None:
+            self._play_raw(clip)
+
+    def play_countdown_beep(self, num: int):
+        """Crisp countdown beep (high-pitch chime on 1, solid beep on 3 and 2)."""
+        clip = self._cache.get("beep_high" if num <= 1 else "beep_low")
+        if clip is not None:
+            self._play_raw(clip)
+
+    def play_whoosh(self):
+        """Whoosh sound for background timeline transition."""
+        clip = self._cache.get("whoosh")
         if clip is not None:
             self._play_raw(clip)
 

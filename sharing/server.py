@@ -10,7 +10,8 @@ import time
 import threading
 import logging
 from pathlib import Path
-from flask import Flask, render_template, send_from_directory, abort
+from typing import Optional
+from flask import Flask, render_template, send_from_directory, abort, redirect
 from config import settings
 from capture.qr import get_local_ip
 
@@ -27,6 +28,23 @@ _PHOTO_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 def _is_valid_photo_id(photo_id: str) -> bool:
     return bool(_PHOTO_ID_PATTERN.match(photo_id))
+
+
+def get_latest_capture_id() -> Optional[str]:
+    """Finds the most recent captured photo ID if any exists."""
+    captures = sorted(settings.CAPTURES_DIR.glob("*.jpg"), key=os.path.getmtime, reverse=True)
+    if captures:
+        return captures[0].stem
+    return None
+
+
+@app.route("/")
+@app.route("/latest")
+def index_or_latest():
+    latest_id = get_latest_capture_id()
+    if latest_id:
+        return redirect(f"/photo/{latest_id}")
+    return render_template("index.html", photo_id="waiting_for_first_capture")
 
 
 def _prune_old_captures():

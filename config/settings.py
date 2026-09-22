@@ -33,17 +33,17 @@ CAMERA_RETRY_DELAY_S = 0.8
 # ── Vision Pipeline (Staggered for 30+ FPS) ──
 VISION_WIDTH = 480
 VISION_HEIGHT = 270
-SEG_EVERY_N = 2
-HAND_EVERY_N = 3
-POSE_EVERY_N = 6
+SEG_EVERY_N = 1                   # Run segmentation every frame for zero edge lag
+HAND_EVERY_N = 2
+POSE_EVERY_N = 5
 POSE_OFFSET = 1
 
 # ── Segmentation Quality ──
-MASK_TEMPORAL_ALPHA = 0.22        # Fast update — eliminates ghosting
-MASK_MORPH_KERNEL = 5
-MASK_GUIDED_RADIUS = 6
-MASK_GUIDED_EPS = 0.01
+MASK_TEMPORAL_ALPHA = 0.04        # Ultra-responsive tracking — eliminates motion ghosting
+MASK_MORPH_KERNEL = 3
 MASK_EDGE_FEATHER = 2
+MASK_CUTOFF_LOW = 0.45            # Clean background rejection (drops walls, boxes, furniture)
+MASK_CUTOFF_HIGH = 0.70           # Solid foreground body opacity
 
 # ── Capture Zone (Center of Screen) ──
 CAPTURE_ZONE_X_RATIO = 0.375
@@ -68,19 +68,26 @@ INTRO_SCAN_DURATION_S = 0.70
 START_BUTTON_HOVER_S = 1.1        # Dwell time with open palm to trigger START
 IDLE_TIMEOUT_S = 16.0             # Inactivity timer: return to ATTRACT if no person seen
 
-# ── Core Gestures ──
-VICTORY_FREEZE_HOLD_S = 0.65       # Hold two fingers / Victory sign (✌️) to freeze time
-VICTORY_FREEZE_COOLDOWN_S = 1.4    # Cooldown before next clone can be created
-PALM_CONFIDENCE = 0.55
-PHOTO_CAPTURE_HOLD_S = 0.80        # Thumbs-up hold for photo capture
-THUMB_HOLD_S = 0.35               # Thumbs up hold to reveal QR code
-FIST_HOLD_S = 0.15                # Fist hold to dismiss QR
-GESTURE_HOLD_S = 0.60
+# ── Snappy Gesture Recognition & Action Latching ──
+PEACE_PHOTO_HOLD_S = 0.20         # Quick peace sign (✌️) triggers photo capture countdown
+PEACE_PHOTO_COOLDOWN_S = 3.5      # Cooldown before peace sign can trigger next capture
+THUMB_HOLD_S = 0.18               # Open thumb (👍) reveals QR code card at bottom-right
+FIST_HOLD_S = 0.12                # Closed fist (✊) dismisses QR code card
+PALM_FREEZE_HOLD_S = 0.35         # Open palm (✋) creates grounded temporal clone
+PALM_FREEZE_COOLDOWN_S = 1.4      # Cooldown before next clone can be created
+PALM_CONFIDENCE = 0.50
+GESTURE_GRACE_PERIOD_S = 0.22     # Hysteresis buffer to tolerate brief tracking flickers
+GESTURE_HOLD_S = 0.40
+
+# Compatibility aliases
+VICTORY_FREEZE_HOLD_S = PEACE_PHOTO_HOLD_S
+VICTORY_FREEZE_COOLDOWN_S = PEACE_PHOTO_COOLDOWN_S
+PHOTO_CAPTURE_HOLD_S = PEACE_PHOTO_HOLD_S
 
 # ── Single-Palm Swipe Timeline Navigation ──
-SWIPE_COOLDOWN_S = 0.50            # Fast background switching on palm swipe
-SWIPE_MIN_VELOCITY_X = 320         # Minimum horizontal velocity for swipe
-ENV_TRANSITION_DURATION = 0.28     # Smooth slide duration across environments
+SWIPE_COOLDOWN_S = 0.45           # Fast background switching on palm swipe
+SWIPE_MIN_VELOCITY_X = 280        # Minimum horizontal velocity for swipe
+ENV_TRANSITION_DURATION = 0.28    # Smooth slide duration across environments
 
 # ── Clean Background Capture ──
 BG_CAPTURE_FRAMES = 20

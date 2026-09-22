@@ -67,8 +67,8 @@ def detect_pointing_up(pts: List[tuple], palm_center: tuple) -> bool:
 
 
 def detect_victory(pts: List[tuple], palm_center: tuple, gesture_name: str, confidence: float) -> bool:
-    """Robust geometric and ML check for a two-finger Victory / Peace sign (V-shape)."""
-    if gesture_name == "Victory" and confidence >= 0.45:
+    """Robust geometric and ML check for a two-finger Victory / Peace sign (V-shape), rotation-invariant."""
+    if gesture_name == "Victory" and confidence >= 0.40:
         return True
 
     if not pts or len(pts) < 21:
@@ -78,23 +78,90 @@ def detect_victory(pts: List[tuple], palm_center: tuple, gesture_name: str, conf
     wrist = pts[0]
     hand_scale = max(20.0, float(np.hypot(palm_cx - wrist[0], palm_cy - wrist[1])))
 
-    # 1. Index finger extended: tip (8) is well above pip (6) and mcp (5)
-    index_extended = (pts[8][1] < pts[6][1] - 12) and (pts[6][1] < pts[5][1] + 10)
+    # Rotation-invariant extension check via distances from palm center
+    d_index = np.hypot(pts[8][0] - palm_cx, pts[8][1] - palm_cy)
+    d_middle = np.hypot(pts[12][0] - palm_cx, pts[12][1] - palm_cy)
+    d_ring = np.hypot(pts[16][0] - palm_cx, pts[16][1] - palm_cy)
+    d_pinky = np.hypot(pts[20][0] - palm_cx, pts[20][1] - palm_cy)
 
-    # 2. Middle finger extended: tip (12) is well above pip (10) and mcp (9)
-    middle_extended = (pts[12][1] < pts[10][1] - 12) and (pts[10][1] < pts[9][1] + 10)
+    index_extended = d_index > hand_scale * 1.25
+    middle_extended = d_middle > hand_scale * 1.25
+    ring_curled = d_ring < hand_scale * 1.15
+    pinky_curled = d_pinky < hand_scale * 1.15
 
-    # 3. Ring finger curled: tip (16) is close to palm or below pip (14)
-    ring_curled = pts[16][1] > pts[14][1] - 12
-
-    # 4. Pinky finger curled: tip (20) is close to palm or below pip (18)
-    pinky_curled = pts[20][1] > pts[18][1] - 12
-
-    # 5. Index and middle tips are separated into a 'V' shape
+    # Index and middle tips are separated into a 'V' shape
     tip_dist = np.hypot(pts[8][0] - pts[12][0], pts[8][1] - pts[12][1])
-    is_v_shape = tip_dist > hand_scale * 0.20
+    is_v_shape = tip_dist > hand_scale * 0.16
 
-    return index_extended and middle_extended and ring_curled and pinky_curled and is_v_shape
+    # Vertical-axis fallback check
+    vert_index = pts[8][1] < pts[6][1] - 10
+    vert_middle = pts[12][1] < pts[10][1] - 10
+    vert_ring = pts[16][1] > pts[14][1] - 12
+    vert_pinky = pts[20][1] > pts[18][1] - 12
+    vertical_v = vert_index and vert_middle and vert_ring and vert_pinky and is_v_shape
+
+    return (index_extended and middle_extended and ring_curled and pinky_curled and is_v_shape) or vertical_v
+
+
+def detect_open_thumb(pts: List[tuple], palm_center: tuple, gesture_name: str, confidence: float) -> bool:
+    """Detects an open thumb (Thumbs-Up or open thumb extension), rotation-invariant."""
+    if gesture_name == "Thumb_Up" and confidence >= 0.40:
+        return True
+
+    if not pts or len(pts) < 21:
+        return False
+
+    palm_cx, palm_cy = palm_center
+    wrist = pts[0]
+    hand_scale = max(20.0, float(np.hypot(palm_cx - wrist[0], palm_cy - wrist[1])))
+
+    d_thumb = np.hypot(pts[4][0] - palm_cx, pts[4][1] - palm_cy)
+    d_index = np.hypot(pts[8][0] - palm_cx, pts[8][1] - palm_cy)
+    d_middle = np.hypot(pts[12][0] - palm_cx, pts[12][1] - palm_cy)
+    d_ring = np.hypot(pts[16][0] - palm_cx, pts[16][1] - palm_cy)
+    d_pinky = np.hypot(pts[20][0] - palm_cx, pts[20][1] - palm_cy)
+
+    thumb_extended = d_thumb > hand_scale * 1.05
+    fingers_curled = (
+        d_index < hand_scale * 1.15 and
+        d_middle < hand_scale * 1.15 and
+        d_ring < hand_scale * 1.15 and
+        d_pinky < hand_scale * 1.15
+    )
+
+    # Vertical thumbs-up check
+    vert_thumb = pts[4][1] < pts[3][1] - 10 and pts[4][1] < pts[5][1] - 15
+    vert_curled = pts[8][1] > pts[6][1] - 10 and pts[12][1] > pts[10][1] - 10
+
+    return (thumb_extended and fingers_curled) or (vert_thumb and vert_curled)
+
+
+def detect_fist(pts: List[tuple], palm_center: tuple, gesture_name: str, confidence: float) -> bool:
+    """Detects a closed fist where all fingers are tucked into palm."""
+    if gesture_name == "Closed_Fist" and confidence >= 0.40:
+        return True
+
+    if not pts or len(pts) < 21:
+        return False
+
+    palm_cx, palm_cy = palm_center
+    wrist = pts[0]
+    hand_scale = max(20.0, float(np.hypot(palm_cx - wrist[0], palm_cy - wrist[1])))
+
+    d_thumb = np.hypot(pts[4][0] - palm_cx, pts[4][1] - palm_cy)
+    d_index = np.hypot(pts[8][0] - palm_cx, pts[8][1] - palm_cy)
+    d_middle = np.hypot(pts[12][0] - palm_cx, pts[12][1] - palm_cy)
+    d_ring = np.hypot(pts[16][0] - palm_cx, pts[16][1] - palm_cy)
+    d_pinky = np.hypot(pts[20][0] - palm_cx, pts[20][1] - palm_cy)
+
+    all_curled = (
+        d_thumb < hand_scale * 0.95 and
+        d_index < hand_scale * 1.05 and
+        d_middle < hand_scale * 1.05 and
+        d_ring < hand_scale * 1.05 and
+        d_pinky < hand_scale * 1.05
+    )
+    return all_curled and gesture_name not in ("Open_Palm", "Victory", "Thumb_Up")
 
 
 class HandTracker:
@@ -182,6 +249,8 @@ class HandTracker:
                 open_palm = detect_open_palm(pts, (palm_cx, palm_cy), gesture_name, confidence)
                 pointing_up = detect_pointing_up(pts, (palm_cx, palm_cy))
                 victory = detect_victory(pts, (palm_cx, palm_cy), gesture_name, confidence)
+                thumb_open = detect_open_thumb(pts, (palm_cx, palm_cy), gesture_name, confidence)
+                fist = detect_fist(pts, (palm_cx, palm_cy), gesture_name, confidence)
 
                 victory_cx = int((index_tip[0] + middle_tip[0]) / 2.0)
                 victory_cy = int((index_tip[1] + middle_tip[1]) / 2.0)
@@ -198,6 +267,8 @@ class HandTracker:
                     "is_open_palm": open_palm,
                     "is_pointing_up": pointing_up,
                     "is_victory": victory,
+                    "is_thumb_open": thumb_open,
+                    "is_fist": fist,
                     "gesture": gesture_name,
                     "gesture_confidence": confidence,
                     "all_landmarks": pts

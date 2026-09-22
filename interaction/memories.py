@@ -2,10 +2,11 @@
 TimeSensei Temporal Memory System
 ───────────────────────────────────
 Manages persistent frozen temporal clones ("memories") with:
-  • Precise spatial anchoring (clones stay locked exactly where the visitor froze time)
-  • Zero floating / zero accidental movement (touch, punch, and fist-grab disabled)
-  • Natural grounded contact shadows
-  • Seamless multi-channel alpha blending & environment lighting adaptation
+  • Crisp, razor-sharp silhouette cropping (zero blur, zero room wall bleed)
+  • Strict Depth Ordering: First picture in front, later pictures behind if collided
+  • Seamless Environment Lighting Adaptation via hardware LUTs (feels captured in each world)
+  • Localized, natural ground contact shadows (no whole-canvas blurring)
+  • Precise spatial anchoring (clones stay locked exactly where the visitor posed)
   • Hard collection limit (FIFO eviction at MAX_MEMORIES)
 """
 import time
@@ -19,10 +20,14 @@ from config import settings
 class FrozenMemory:
     """A stationary frozen temporal clone locked in physical space."""
 
+    _lut_cache: Dict[Tuple, np.ndarray] = {}
+
     def __init__(
         self,
-        person_bgra: np.ndarray,
-        bbox: Tuple[int, int, int, int],
+        crop_bgr: np.ndarray,
+        crop_alpha: np.ndarray,
+        origin_x: int,
+        origin_y: int,
         capture_time: float,
         memory_id: int,
         frame_h: int,
@@ -33,35 +38,20 @@ class FrozenMemory:
         self.frame_h = frame_h
         self.frame_w = frame_w
 
-        x, y, bw, bh = bbox
-        self.crop_bgra = person_bgra[y:y+bh, x:x+bw].copy()
+        # Razor-sharp RGB cutout and solid alpha mask
+        self.crop_bgr = crop_bgr.copy()
+        self.crop_alpha = crop_alpha.copy()
 
-        # Feather bottom edge (6px) to eliminate harsh crop lines
-        if bh > 10:
-            for r in range(min(6, bh)):
-                factor = r / 6.0
-                self.crop_bgra[bh - 1 - r, :, 3] = (
-                    self.crop_bgra[bh - 1 - r, :, 3].astype(np.float32) * factor
-                ).astype(np.uint8)
+        # Spatial Anchoring: Lock clone exactly where visitor was standing
+        self.origin_x = float(origin_x)
+        self.origin_y = float(origin_y)
+        self.height, self.width = crop_bgr.shape[:2]
 
-        # ── Precise Spatial Anchoring: Lock clone exactly where visitor was standing ──
-        self.origin_x = float(x)
-        self.origin_y = float(y)
-        self.width = bw
-        self.height = bh
-
-        # Reaction / Motion offsets (strictly stationary)
+        # Stationarity
         self.offset_x = 0.0
         self.offset_y = 0.0
         self.rotation = 0.0
         self.shake_intensity = 0.0
-        self.reaction_label = ""
-        self.reaction_time = 0.0
-        self.reaction_duration = 0.0
-        self.strike_count = 0
-        self.last_strike_time = 0.0
-
-        # Clone remains intact and stationary
         self.is_shattered = False
         self.shatter_finished = False
         self.is_grabbed = False
@@ -76,44 +66,99 @@ class FrozenMemory:
         return int(self.origin_y + self.height / 2.0)
 
     def apply_strike(self, kind: str, direction_x: float = 0.0, direction_y: float = 0.0, force: float = 1.0) -> bool:
-        """Combat and touch disabled as of now — clone remains peacefully stationary."""
         return False
 
     def update(self):
-        """No drift, no wobble — clone stays locked in place."""
+        """Clone stays stationary."""
         pass
 
-    def render_onto(self, canvas: np.ndarray, env_tint: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
-        """Composite memory onto canvas with natural grounding and contact shadow."""
-        ch, cw = canvas.shape[:2]
+    @classmethod
+    def _get_env_lut(cls, env: Any) -> Optional[np.ndarray]:
+        """Computes or retrieves cached 1x256x3 hardware Look-Up Table matching active environment."""
+        if env is None or getattr(env, "id", "") == "original_room":
+            return None
 
+        ambient_tint = getattr(env, "ambient_tint_bgr", (1.0, 1.0, 1.0))
+        brightness = getattr(env, "brightness_multiplier", 1.0)
+        contrast = getattr(env, "contrast_multiplier", 1.0)
+        env_id = getattr(env, "id", "custom")
+
+        key = (env_id, ambient_tint, brightness, contrast)
+        lut = cls._lut_cache.get(key)
+        if lut is not None:
+            return lut
+
+        tint = np.array(ambient_tint, dtype=np.float32)
+        intensity = settings.COLOR_MATCH_INTENSITY
+        effective_tint = (1.0 - intensity) + (tint * intensity)
+
+        lut_arr = np.zeros((1, 256, 3), dtype=np.uint8)
+        for i in range(256):
+            for c in range(3):
+                val = (i * effective_tint[c] - 128.0) * contrast + 128.0
+                lut_arr[0, i, c] = int(np.clip(val * brightness, 0.0, 255.0))
+
+        cls._lut_cache[key] = lut_arr
+        return lut_arr
+
+    def render_shadow(self, canvas: np.ndarray):
+        """
+        Renders localized ground contact shadow under clone base.
+        Restricted to a local bounding box under the feet — zero full-canvas blurs.
+        """
+        ch, cw = canvas.shape[:2]
         dx = int(self.origin_x)
         dy = int(self.origin_y)
+        mw, mh = self.width, self.height
 
-        crop = self.crop_bgra.copy()
-
-        # Environment lighting adaptation
-        if env_tint != (1.0, 1.0, 1.0):
-            tint_arr = np.array([env_tint[0], env_tint[1], env_tint[2]], dtype=np.float32)
-            intensity = 0.20
-            effective = (1.0 - intensity) + (tint_arr * intensity)
-            crop[:, :, :3] = np.clip(crop[:, :, :3].astype(np.float32) * effective, 0, 255).astype(np.uint8)
-
-        mh, mw = crop.shape[:2]
-
-        # ── Realistic Ground Contact Shadow under clone base ──
         shadow_cx = dx + mw // 2
-        shadow_cy = min(ch - 3, dy + mh - 2)
-        shadow_w = int(mw * 0.38)
-        shadow_h = max(6, int(mh * 0.035))
+        shadow_cy = min(ch - 4, dy + mh - 2)
+        shadow_rx = int(mw * 0.36)
+        shadow_ry = max(5, int(mh * 0.032))
 
-        if 0 < shadow_cy < ch and 0 < shadow_cx < cw:
-            shadow_overlay = canvas.copy()
-            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy), (shadow_w, shadow_h), 0, 0, 360, (5, 5, 8), -1)
-            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy + 1), (int(shadow_w * 1.35), int(shadow_h * 1.5)), 0, 0, 360, (15, 15, 22), -1)
-            cv2.addWeighted(shadow_overlay, 0.40, canvas, 0.60, 0, canvas)
+        # Local ROI bounds
+        x1 = max(0, shadow_cx - shadow_rx * 2)
+        x2 = min(cw, shadow_cx + shadow_rx * 2)
+        y1 = max(0, shadow_cy - shadow_ry * 2)
+        y2 = min(ch, shadow_cy + shadow_ry * 2)
 
-        # ── Composite Memory Cutout ──
+        if x2 > x1 and y2 > y1 and shadow_cy > 0:
+            roi_h, roi_w = y2 - y1, x2 - x1
+            local_shadow = np.zeros((roi_h, roi_w), dtype=np.float32)
+            local_cx = shadow_cx - x1
+            local_cy = shadow_cy - y1
+
+            # Inner dense contact + soft outer falloff
+            cv2.ellipse(local_shadow, (local_cx, local_cy), (shadow_rx, shadow_ry), 0, 0, 360, 0.40, -1)
+            cv2.ellipse(local_shadow, (local_cx, local_cy + 1), (int(shadow_rx * 1.3), int(shadow_ry * 1.4)), 0, 0, 360, 0.20, -1)
+            local_shadow = cv2.GaussianBlur(local_shadow, (15, 15), 0)
+
+            factor = 1.0 - local_shadow[..., None]
+            canvas[y1:y2, x1:x2] = (canvas[y1:y2, x1:x2].astype(np.float32) * factor).astype(np.uint8)
+
+    def render_person(self, canvas: np.ndarray, env: Any = None):
+        """
+        Composites the crisp person cutout onto canvas, dynamically adapted to active environment.
+        """
+        ch, cw = canvas.shape[:2]
+        dx = int(self.origin_x)
+        dy = int(self.origin_y)
+        mw, mh = self.width, self.height
+
+        # Dynamic environment lighting adaptation
+        lut = self._get_env_lut(env)
+        if lut is not None:
+            adapted_bgr = cv2.LUT(self.crop_bgr, lut)
+        elif isinstance(env, tuple) and env != (1.0, 1.0, 1.0):
+            # Backward-compat tuple tint
+            tint_arr = np.array([env[0], env[1], env[2]], dtype=np.float32)
+            intensity = settings.COLOR_MATCH_INTENSITY
+            eff = (1.0 - intensity) + (tint_arr * intensity)
+            adapted_bgr = np.clip(self.crop_bgr.astype(np.float32) * eff, 0, 255).astype(np.uint8)
+        else:
+            adapted_bgr = self.crop_bgr
+
+        # Canvas ROI intersection
         src_x1 = max(0, -dx)
         src_y1 = max(0, -dy)
         dst_x1 = max(0, dx)
@@ -124,15 +169,21 @@ class FrozenMemory:
         dst_y2 = dst_y1 + (src_y2 - src_y1)
 
         if src_x1 < src_x2 and src_y1 < src_y2 and dst_x1 < cw and dst_y1 < ch:
-            patch = crop[src_y1:src_y2, src_x1:src_x2]
-            alpha = patch[:, :, 3:4].astype(np.float32) / 255.0
-            bgr = patch[:, :, :3].astype(np.float32)
+            patch_bgr = adapted_bgr[src_y1:src_y2, src_x1:src_x2].astype(np.float32)
+            patch_alpha = self.crop_alpha[src_y1:src_y2, src_x1:src_x2, None]
             roi = canvas[dst_y1:dst_y2, dst_x1:dst_x2].astype(np.float32)
-            canvas[dst_y1:dst_y2, dst_x1:dst_x2] = (bgr * alpha + roi * (1.0 - alpha)).astype(np.uint8)
+            canvas[dst_y1:dst_y2, dst_x1:dst_x2] = (
+                patch_bgr * patch_alpha + roi * (1.0 - patch_alpha)
+            ).astype(np.uint8)
+
+    def render_onto(self, canvas: np.ndarray, env: Any = None):
+        """Unified rendering for single memory."""
+        self.render_shadow(canvas)
+        self.render_person(canvas, env)
 
 
 class MemoryManager:
-    """Manages all frozen temporal clones in TimeSensei."""
+    """Manages all frozen temporal clones in TimeSensei with depth sorting."""
 
     def __init__(self):
         self.memories: List[FrozenMemory] = []
@@ -140,36 +191,85 @@ class MemoryManager:
         self.grabbed_memory: Optional[FrozenMemory] = None
 
     def create_memory(self, frame_bgr: np.ndarray, alpha_mask: np.ndarray) -> Optional[FrozenMemory]:
-        """Create a frozen clone from the current frame and mask, locked to its exact physical position."""
+        """
+        Creates a razor-sharp frozen clone from the current frame and mask:
+          • Rejects all room background bleed (wall, furniture, boxes).
+          • Preserves 100% authentic sensor pixel sharpness inside body (no blur/smearing).
+          • Anti-aliases the 1-pixel boundary so it blends seamlessly into any virtual world.
+        """
         h, w = frame_bgr.shape[:2]
 
-        binary = (alpha_mask > 0.30).astype(np.uint8)
+        binary = (alpha_mask > 0.40).astype(np.uint8)
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
-        largest = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest) < 4500:
+        # Encompass all visible people in the frame
+        valid_contours = [c for c in contours if cv2.contourArea(c) > 1000]
+        if not valid_contours:
+            valid_contours = [max(contours, key=cv2.contourArea)]
+        if cv2.contourArea(valid_contours[0]) < 300:
             return None
 
-        x, y, bw, bh = cv2.boundingRect(largest)
-        pad = 12
-        x = max(0, x - pad)
-        y = max(0, y - pad)
-        bw = min(w - x, bw + 2 * pad)
-        bh = min(h - y, bh + 2 * pad)
+        all_pts = np.vstack(valid_contours)
+        x, y, bw, bh = cv2.boundingRect(all_pts)
 
-        bgra = np.zeros((h, w, 4), dtype=np.uint8)
-        bgra[:, :, :3] = frame_bgr
-        bgra[:, :, 3] = (np.clip(alpha_mask, 0, 1) * 255).astype(np.uint8)
+        # Snug bounding box with minimal padding (8px)
+        pad = 8
+        x1 = max(0, x - pad)
+        y1 = max(0, y - pad)
+        x2 = min(w, x + bw + pad)
+        y2 = min(h, y + bh + pad)
+        bw = x2 - x1
+        bh = y2 - y1
 
-        # Enforce MAX_MEMORIES cap: Evict oldest if ceiling reached
+        roi_bgr = frame_bgr[y1:y2, x1:x2].copy()
+        raw_roi_alpha = alpha_mask[y1:y2, x1:x2].copy()
+
+        # ── Step 1: Create crisp, solid alpha mask (solid 1.0 body, smooth 1-2px edge) ──
+        # Any pixel > 0.55 is definitely the visitor: solid 1.0 opacity (zero translucency!)
+        # Any pixel < 0.35 is room background: 0.0 (zero ghost bleed!)
+        # Smooth transition between 0.35 and 0.55
+        clean_alpha = np.zeros_like(raw_roi_alpha, dtype=np.float32)
+        span = 0.20
+        t = np.clip((raw_roi_alpha - 0.35) / span, 0.0, 1.0)
+        clean_alpha = t * t * (3.0 - 2.0 * t)
+
+        # ── Step 2: Boundary defringing (outer 1-2px only, interior 100% untouched) ──
+        # Authentic interior pixels (clean_alpha >= 0.70) are preserved with zero blur.
+        # Outer rim pixels (0.02 < clean_alpha < 0.70) receive color from adjacent body
+        # to cleanly eliminate white room lighting or cardboard-box halos.
+        inner = (clean_alpha >= 0.70).astype(np.uint8)
+        border = (clean_alpha > 0.02) & (clean_alpha < 0.70)
+        if np.any(inner) and np.any(border):
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            dilated_colors = cv2.dilate(roi_bgr * inner[..., None], kernel)
+            dilated_weights = cv2.dilate(inner, kernel)
+            valid = (dilated_weights > 0) & border
+            if np.any(valid):
+                roi_bgr[valid] = (
+                    roi_bgr[valid].astype(np.float32) * 0.40 +
+                    dilated_colors[valid].astype(np.float32) * 0.60
+                ).astype(np.uint8)
+
+        # Zero out background pixels outside the cutout
+        roi_bgr[clean_alpha <= 0.02] = 0
+
+        # Only feather bottom edge if the person was actually cut off at the bottom frame edge
+        if y2 >= h - 2 and bh > 12:
+            for r in range(min(6, bh)):
+                factor = r / 6.0
+                clean_alpha[bh - 1 - r, :] *= factor
+
+        # Enforce MAX_MEMORIES cap (FIFO eviction)
         if len(self.memories) >= settings.MAX_MEMORIES:
             self.memories.pop(0)
 
         memory = FrozenMemory(
-            person_bgra=bgra,
-            bbox=(x, y, bw, bh),
+            crop_bgr=roi_bgr,
+            crop_alpha=clean_alpha,
+            origin_x=x1,
+            origin_y=y1,
             capture_time=time.time(),
             memory_id=self._next_id,
             frame_h=h,
@@ -184,9 +284,26 @@ class MemoryManager:
         for m in self.memories:
             m.update()
 
-    def render_all(self, canvas: np.ndarray, env_tint: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
-        for m in self.memories:
-            m.render_onto(canvas, env_tint)
+    def render_all(self, canvas: np.ndarray, env: Any = None):
+        """
+        Renders all temporal memories with strict depth ordering:
+          1. Floor contact shadows are rendered first (on the ground).
+          2. Clones are rendered in reverse chronological order:
+             • Later pictures (P2, P3...) are drawn first (in the background).
+             • First picture (P1) is drawn last (in the foreground, at first).
+             • If collided: first picture stays at first in front, later pictures behind.
+             • If not collided: both pictures appear crisp and unhindered.
+        """
+        if not self.memories:
+            return
+
+        # Pass 1: Floor contact shadows underneath all clones
+        for m in reversed(self.memories):
+            m.render_shadow(canvas)
+
+        # Pass 2: Person cutouts (reversed: earliest clone rendered last = in front)
+        for m in reversed(self.memories):
+            m.render_person(canvas, env)
 
     def find_closest_memory(self, px: int, py: int, max_dist: float = 140.0) -> Optional[FrozenMemory]:
         best = None
@@ -199,11 +316,9 @@ class MemoryManager:
         return best
 
     def update_hover_targets(self, hand_positions: List[Tuple[int, int]]):
-        """Hover target disabled."""
         pass
 
     def try_grab(self, hand_x: int, hand_y: int) -> bool:
-        """Grab disabled — clones stay stationary."""
         return False
 
     def drag(self, hand_x: int, hand_y: int):

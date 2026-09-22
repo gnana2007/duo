@@ -99,11 +99,11 @@ class UIRenderer:
             cv2.line(canvas, origin, h_end, color, thick, cv2.LINE_AA)
             cv2.line(canvas, origin, v_end, color, thick, cv2.LINE_AA)
 
-    def draw_victory_freeze_progress(self, canvas: np.ndarray, finger_pos: Tuple[int, int], progress: float):
-        """Draws glowing circular temporal ring around fingers while holding Victory sign."""
-        if finger_pos is None or progress <= 0.05:
+    def draw_palm_freeze_progress(self, canvas: np.ndarray, palm_pos: Tuple[int, int], progress: float):
+        """Draws glowing circular temporal ring around palm while holding open palm."""
+        if palm_pos is None or progress <= 0.05:
             return
-        px, py = finger_pos
+        px, py = palm_pos
         radius = 38
         # Outer track
         cv2.circle(canvas, (px, py), radius, (60, 60, 75), 2, cv2.LINE_AA)
@@ -112,17 +112,17 @@ class UIRenderer:
         cv2.ellipse(canvas, (px, py), (radius, radius), -90, 0, angle, (0, 70, 255), 3, cv2.LINE_AA)
         cv2.ellipse(canvas, (px, py), (radius - 2, radius - 2), -90, 0, angle, (200, 240, 255), 1, cv2.LINE_AA)
 
-        # Label above fingers
+        # Label above palm
         cv2.putText(canvas, "FREEZING TIME...", (px - 58, py - 46),
                     cv2.FONT_HERSHEY_DUPLEX, 0.45, (235, 230, 220), 1, cv2.LINE_AA)
 
     # Alias for compatibility
-    draw_palm_freeze_progress = draw_victory_freeze_progress
+    draw_victory_freeze_progress = draw_palm_freeze_progress
 
     def draw_hud(self, canvas: np.ndarray, timeline_name: str,
-                 timeline_accent: Tuple[int, int, int], memory_count: int,
-                 mode_name: str, fps: float, grabbed: bool = False):
-        """Renders minimal dark glass visitor HUD."""
+                 timeline_accent: Tuple[int, int, int], memory_count: int = 0,
+                 mode_name: str = "LIVE", fps: float = 30.0, grabbed: bool = False):
+        """Renders minimal dark glass visitor HUD without echoes clutter."""
         h, w = canvas.shape[:2]
 
         # Top-Left: Timeline Pill
@@ -136,28 +136,54 @@ class UIRenderer:
         d_tl.text((28, 11), f"TIMELINE // {timeline_name.upper()}", font=_F_TITLE, fill=(240, 238, 230, 255))
         _overlay_bgra(canvas, _pil_to_cv(pill_tl), 16, 16)
 
-        # Top-Right: Echoes & Mode Pill
-        pill_tr = Image.new("RGBA", (260, 42), (0, 0, 0, 0))
+        # Top-Right: Clean Status / Photo Count Pill
+        pill_w = 250 if memory_count > 0 else 220
+        pill_tr = Image.new("RGBA", (pill_w, 42), (0, 0, 0, 0))
         d_tr = ImageDraw.Draw(pill_tr)
-        d_tr.rounded_rectangle([(0, 0), (259, 41)], radius=12,
+        d_tr.rounded_rectangle([(0, 0), (pill_w - 1, 41)], radius=12,
                                fill=(14, 16, 22, 190),
-                               outline=(80, 85, 100, 180), width=1)
-        d_tr.text((14, 11), f"ECHOES: {memory_count}   MODE: {mode_name}", font=_F_TITLE, fill=(210, 215, 225, 240))
-        _overlay_bgra(canvas, _pil_to_cv(pill_tr), w - 276, 16)
+                               outline=(60, 180, 100, 180), width=1)
+        d_tr.ellipse([(12, 17), (18, 23)], fill=(50, 220, 120, 255))
+        status_txt = f"PHOTOS: {memory_count}  •  ✌️ SHOOT" if memory_count > 0 else "READY // ✌️ TO SHOOT"
+        d_tr.text((26, 11), status_txt, font=_F_STATUS, fill=(225, 245, 230, 240))
+        _overlay_bgra(canvas, _pil_to_cv(pill_tr), w - pill_w - 16, 16)
 
         # Bottom Hints Bar
-        hints_img = Image.new("RGBA", (780, 34), (0, 0, 0, 0))
+        bar_w = 890
+        hints_img = Image.new("RGBA", (bar_w, 34), (0, 0, 0, 0))
         d_h = ImageDraw.Draw(hints_img)
-        d_h.rounded_rectangle([(0, 0), (779, 33)], radius=10,
-                              fill=(12, 14, 18, 170),
+        d_h.rounded_rectangle([(0, 0), (bar_w - 1, 33)], radius=10,
+                              fill=(12, 14, 18, 175),
                               outline=(60, 65, 80, 150), width=1)
-        hints = "✌️ Two Fingers: Freeze Time   •   ✋ Palm Swipe: Switch World   •   👍 Thumb: QR   •   P: Photo"
+        hints = "✌️ Peace: Take Photo   •   👍 Thumb: QR Code   •   ✊ Fist: Close QR   •   ✋✋ Double Swipe: Switch World"
         tw = d_h.textlength(hints, font=_F_HINT)
-        d_h.text(((780 - tw) / 2, 8), hints, font=_F_HINT, fill=(180, 185, 195, 220))
-        _overlay_bgra(canvas, _pil_to_cv(hints_img), w // 2 - 390, h - 48)
+        d_h.text(((bar_w - tw) / 2, 8), hints, font=_F_HINT, fill=(195, 200, 210, 230))
+        _overlay_bgra(canvas, _pil_to_cv(hints_img), w // 2 - bar_w // 2, h - 48)
 
-    def draw_micro_tutorial(self, canvas: np.ndarray, has_person: bool, memory_count: int):
-        """Minimal 5-second onboarding without a tutorial screen."""
+    def draw_swipe_prompt(self, canvas: np.ndarray, pending_direction: int):
+        """Displays intuitive visual prompt when 1st swipe is detected, prompting 2nd swipe."""
+        if pending_direction == 0:
+            return
+        h, w = canvas.shape[:2]
+        direction_str = "NEXT WORLD  ►" if pending_direction > 0 else "◄  PREVIOUS WORLD"
+        msg = f"SWIPE AGAIN TO SWITCH ({direction_str})"
+
+        pill_w = 420
+        pill_h = 38
+        cx = (w - pill_w) // 2
+        cy = h - 96
+
+        pill = Image.new("RGBA", (pill_w, pill_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(pill)
+        draw.rounded_rectangle([(0, 0), (pill_w - 1, pill_h - 1)], radius=10,
+                               fill=(18, 20, 28, 220),
+                               outline=(80, 190, 240, 240), width=2)
+        tw = draw.textlength(msg, font=_F_STATUS)
+        draw.text(((pill_w - tw) / 2, 9), msg, font=_F_STATUS, fill=(180, 235, 255, 255))
+        _overlay_bgra(canvas, _pil_to_cv(pill), cx, cy)
+
+    def draw_micro_tutorial(self, canvas: np.ndarray, has_person: bool, memory_count: int = 0):
+        """Minimal onboarding prompt."""
         if not has_person or self.tutorial_step >= 3:
             return
 
@@ -168,35 +194,34 @@ class UIRenderer:
         msg = ""
         # Step 0: Initial prompt
         if self.tutorial_step == 0:
-            msg = "SHOW TWO FINGERS (✌️) TO FREEZE TIME"
-            if memory_count > 0:
+            msg = "SHOW PEACE SIGN (✌️) TO TAKE PHOTO"
+            if elapsed > 6.0:
                 self.tutorial_step = 1
                 self.tutorial_step_time = now
 
-        # Step 1: Memory created
+        # Step 1: Swipe world prompt
         elif self.tutorial_step == 1:
-            msg = "TIME FROZEN -- NOW WALK AWAY"
-            if elapsed > 3.5:
+            msg = "SWIPE PALM TWICE (✋✋) TO CHANGE WORLD"
+            if elapsed > 6.0:
                 self.tutorial_step = 2
                 self.tutorial_step_time = now
 
-        # Step 2: Swipe timeline
+        # Step 2: Thumb QR prompt
         elif self.tutorial_step == 2:
-            msg = "SWIPE PALM (✋) TO SWITCH TIMELINES"
-            if elapsed > 4.5:
+            msg = "SHOW THUMB (👍) FOR QR CODE  •  FIST (✊) TO CLOSE"
+            if elapsed > 6.0:
                 self.tutorial_step = 3
 
         if msg:
-            tut_img = Image.new("RGBA", (460, 44), (0, 0, 0, 0))
+            tut_w = 540
+            tut_img = Image.new("RGBA", (tut_w, 44), (0, 0, 0, 0))
             draw = ImageDraw.Draw(tut_img)
-            draw.rounded_rectangle([(0, 0), (459, 43)], radius=12,
-                                   fill=(20, 16, 24, 210),
+            draw.rounded_rectangle([(0, 0), (tut_w - 1, 43)], radius=12,
+                                   fill=(20, 16, 24, 215),
                                    outline=(180, 30, 45, 240), width=2)
             tw = draw.textlength(msg, font=_F_TUTORIAL)
-            draw.text(((460 - tw) / 2, 11), msg, font=_F_TUTORIAL, fill=(245, 242, 235, 255))
-            _overlay_bgra(canvas, _pil_to_cv(tut_img), (w - 460) // 2, 75)
-
-
+            draw.text(((tut_w - tw) / 2, 11), msg, font=_F_TUTORIAL, fill=(245, 242, 235, 255))
+            _overlay_bgra(canvas, _pil_to_cv(tut_img), (w - tut_w) // 2, 75)
 
     def draw_countdown(self, canvas: np.ndarray, seconds_remaining: float, total: float):
         """Photo countdown circle."""
@@ -205,10 +230,16 @@ class UIRenderer:
         progress = 1.0 - (seconds_remaining / total)
         num = max(1, int(np.ceil(seconds_remaining)))
 
-        overlay = canvas.copy()
-        cv2.circle(overlay, (cx, cy), 105, (12, 14, 20), -1, cv2.LINE_AA)
-        cv2.circle(overlay, (cx, cy), 105, (180, 30, 45), 2, cv2.LINE_AA)
-        cv2.addWeighted(overlay, 0.80, canvas, 0.20, 0, canvas)
+        # Localized circular dial to protect surrounding frame and clones
+        r = 115
+        rx1, rx2 = max(0, cx - r), min(w, cx + r)
+        ry1, ry2 = max(0, cy - r), min(h, cy + r)
+        if rx2 > rx1 and ry2 > ry1:
+            roi = canvas[ry1:ry2, rx1:rx2]
+            overlay_roi = roi.copy()
+            cv2.circle(overlay_roi, (cx - rx1, cy - ry1), 105, (12, 14, 20), -1, cv2.LINE_AA)
+            cv2.circle(overlay_roi, (cx - rx1, cy - ry1), 105, (180, 30, 45), 2, cv2.LINE_AA)
+            cv2.addWeighted(overlay_roi, 0.80, roi, 0.20, 0, roi)
 
         angle = int(progress * 360)
         cv2.ellipse(canvas, (cx, cy), (109, 109), -90, 0, angle, (0, 50, 255), 5, cv2.LINE_AA)
@@ -228,29 +259,42 @@ class UIRenderer:
     def draw_capture_success(self, canvas: np.ndarray):
         """Banner on capture."""
         h, w = canvas.shape[:2]
-        msg_img = Image.new("RGBA", (450, 46), (0, 0, 0, 0))
+        msg_img = Image.new("RGBA", (480, 46), (0, 0, 0, 0))
         draw = ImageDraw.Draw(msg_img)
-        draw.rounded_rectangle([(0, 0), (449, 45)], radius=12,
+        draw.rounded_rectangle([(0, 0), (479, 45)], radius=12,
                                fill=(20, 60, 35, 220),
                                outline=(60, 240, 140, 240), width=2)
-        msg = "Temporal Capture Saved!  👍 Show QR  ✊ Hide"
+        msg = "Photo Captured!  👍 Show QR  •  ✊ Fist to Close"
         tw = draw.textlength(msg, font=_F_BTN)
-        draw.text(((450 - tw) / 2, 12), msg, font=_F_BTN, fill=(255, 255, 255, 255))
-        _overlay_bgra(canvas, _pil_to_cv(msg_img), w // 2 - 225, 75)
+        draw.text(((480 - tw) / 2, 12), msg, font=_F_BTN, fill=(255, 255, 255, 255))
+        _overlay_bgra(canvas, _pil_to_cv(msg_img), w // 2 - 240, 75)
 
-    def draw_qr_popup(self, canvas: np.ndarray, qr_image: Optional[np.ndarray]):
-        """Rebranded TimeSensei QR Card at bottom-right."""
+    def draw_qr_popup(self, canvas: np.ndarray, qr_image: Optional[np.ndarray], photo_path: Optional[str] = None):
+        """Rich Photo Card with QR Code and Photo Thumbnail at bottom-right."""
         if qr_image is None:
             return
 
         h, w = canvas.shape[:2]
-        card_w = 230
-        qr_size = 120
-        card_h = qr_size + 70
-        margin = 16
+        margin = 18
 
+        # Check if photo thumbnail is available
+        thumb_img = None
+        if photo_path:
+            import os
+            if os.path.exists(photo_path):
+                try:
+                    loaded = cv2.imread(photo_path)
+                    if loaded is not None:
+                        thumb_img = loaded
+                except Exception:
+                    pass
+
+        has_thumb = thumb_img is not None
+        qr_size = 110
+        card_w = 330 if has_thumb else 220
+        card_h = 180
         cx = w - card_w - margin
-        cy = h - card_h - margin - 42
+        cy = h - card_h - margin - 40
 
         card = Image.new("RGBA", (card_w, card_h), (0, 0, 0, 0))
         draw = ImageDraw.Draw(card)
@@ -258,23 +302,36 @@ class UIRenderer:
                                fill=(14, 16, 24, 235),
                                outline=(180, 30, 45, 230), width=2)
 
-        title = "TEMPORAL CAPTURE"
+        title = "YOUR PHOTO IS READY" if has_thumb else "TEMPORAL PORTAL"
         tw = draw.textlength(title, font=_F_SMALL)
         draw.text(((card_w - tw) / 2, 8), title, font=_F_SMALL, fill=(240, 80, 95, 255))
 
-        sub = "Scan with Phone  •  ✊ to close"
+        sub = "Scan with Phone  •  ✊ Fist to close"
         sw = draw.textlength(sub, font=_F_SMALL)
-        draw.text(((card_w - sw) / 2, 26), sub, font=_F_SMALL, fill=(180, 190, 205, 230))
+        draw.text(((card_w - sw) / 2, card_h - 22), sub, font=_F_SMALL, fill=(180, 190, 205, 230))
 
         _overlay_bgra(canvas, _pil_to_cv(card), cx, cy)
 
+        # Draw thumbnail on left if present
+        qr_x = cx + (card_w - qr_size) // 2
+        qr_y = cy + 34
+
+        if has_thumb:
+            tw_px = 135
+            th_px = 95
+            thumb_resized = cv2.resize(thumb_img, (tw_px, th_px), interpolation=cv2.INTER_AREA)
+            tx = cx + 18
+            ty = cy + 34
+            if ty + th_px < h and tx + tw_px < w and tx >= 0 and ty >= 0:
+                canvas[ty:ty + th_px, tx:tx + tw_px] = thumb_resized
+                cv2.rectangle(canvas, (tx - 1, ty - 1), (tx + tw_px + 1, ty + th_px + 1), (100, 110, 130), 1, cv2.LINE_AA)
+            qr_x = cx + card_w - qr_size - 18
+
         qr_resized = cv2.resize(qr_image, (qr_size, qr_size), interpolation=cv2.INTER_NEAREST)
-        qx = cx + (card_w - qr_size) // 2
-        qy = cy + 46
-        if qy + qr_size < h and qx + qr_size < w and qx >= 0 and qy >= 0:
-            canvas[qy:qy + qr_size, qx:qx + qr_size] = qr_resized
-            cv2.rectangle(canvas, (qx - 1, qy - 1),
-                          (qx + qr_size + 1, qy + qr_size + 1),
+        if qr_y + qr_size < h and qr_x + qr_size < w and qr_x >= 0 and qr_y >= 0:
+            canvas[qr_y:qr_y + qr_size, qr_x:qr_x + qr_size] = qr_resized
+            cv2.rectangle(canvas, (qr_x - 1, qr_y - 1),
+                          (qr_x + qr_size + 1, qr_y + qr_size + 1),
                           (240, 240, 240), 1, cv2.LINE_AA)
 
     def draw_diagnostics(self, canvas: np.ndarray, stats: Dict[str, Any]):
@@ -284,7 +341,7 @@ class UIRenderer:
             f"FPS: {stats.get('fps', 0):.1f} (Target: {settings.TARGET_FPS})",
             f"Display: {settings.CAPTURE_WIDTH}x{settings.CAPTURE_HEIGHT} | Vision: {settings.VISION_WIDTH}x{settings.VISION_HEIGHT}",
             f"Persons Detected: {stats.get('num_persons', 0)} | Hands: {stats.get('num_hands', 0)}",
-            f"Frozen Clones: {stats.get('memory_count', 0)} / {settings.MAX_MEMORIES}",
+            f"Double Swipe: Active (Requires 2 consecutive swipes)",
             f"Active Mode: {stats.get('mode', 'PRESENT')}",
             f"Audio Enabled: {stats.get('audio_enabled', False)}",
             f"State: {stats.get('app_state', 'UNKNOWN')}",

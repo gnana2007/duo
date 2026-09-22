@@ -50,25 +50,34 @@ class NaturalCompositor:
 
     def defringe_edges(self, adapted_fg: np.ndarray, raw_fg: np.ndarray, alpha_roi: np.ndarray) -> np.ndarray:
         """
-        Reduces color bleeding / halo artifacts along the silhouette boundaries.
-        Only runs on the semi-transparent edge pixels.
+        Reduces color bleeding / halo artifacts along silhouette boundaries.
+        Only runs on semi-transparent edge pixels and propagates true inner foreground colors
+        outwards, preventing camera room background from creating a white rim.
         """
-        border_mask = ((alpha_roi > 0.08) & (alpha_roi < 0.88)).astype(np.uint8)
+        border_mask = ((alpha_roi > 0.05) & (alpha_roi < 0.85)).astype(np.uint8)
         if not np.any(border_mask):
             return adapted_fg
 
-        inner_mask = (alpha_roi >= 0.88).astype(np.uint8)
+        inner_mask = (alpha_roi >= 0.85).astype(np.uint8)
         if not np.any(inner_mask):
             return adapted_fg
 
-        ksize = settings.DEFRINGE_RADIUS * 2 + 1
+        # Mask out room background so only authentic person colors can extend outward
+        masked_inner = adapted_fg * inner_mask[..., None]
+        ksize = max(5, settings.DEFRINGE_RADIUS * 2 + 1)
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (ksize, ksize))
-        dilated_inner = cv2.dilate(raw_fg, kernel)
+        dilated_colors = cv2.dilate(masked_inner, kernel)
+        dilated_weights = cv2.dilate(inner_mask, kernel)
 
-        weight = (border_mask[..., None] * 0.40).astype(np.float32)
-        defringed = (adapted_fg.astype(np.float32) * (1.0 - weight) +
-                     dilated_inner.astype(np.float32) * weight).astype(np.uint8)
-        return defringed
+        valid = (dilated_weights > 0) & (border_mask > 0)
+        out_fg = adapted_fg.copy()
+        if np.any(valid):
+            # Blend inner color to cleanly neutralize edge fringe
+            out_fg[valid] = (
+                adapted_fg[valid].astype(np.float32) * 0.35 +
+                dilated_colors[valid].astype(np.float32) * 0.65
+            ).astype(np.uint8)
+        return out_fg
 
     def composite(
         self,
