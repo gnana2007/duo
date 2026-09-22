@@ -1,24 +1,23 @@
 """
-Frozen Memory System v3.2
-─────────────────────────
-Persistent person cutouts with:
-  • Grounding to floor plane — NEVER floats in the air
-  • Soft ground contact shadow beneath feet
-  • Stable, zero-bobbing rendering (no floating movement)
-  • Environment lighting adaptation
-  • Grab & move with hand gestures
-  • Reactive interactions (punch/kick/tickle/touch)
-  • No frame or memory numbering badges
+TimeSensei Temporal Memory System
+───────────────────────────────────
+Manages persistent frozen temporal clones ("memories") with:
+  • Precise spatial anchoring (clones stay locked exactly where the visitor froze time)
+  • Zero floating / zero accidental movement (touch, punch, and fist-grab disabled)
+  • Natural grounded contact shadows
+  • Seamless multi-channel alpha blending & environment lighting adaptation
+  • Hard collection limit (FIFO eviction at MAX_MEMORIES)
 """
 import time
 import math
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
 import cv2
+from config import settings
 
 
 class FrozenMemory:
-    """One captured person cutout frozen at a specific physical location, grounded to the floor."""
+    """A stationary frozen temporal clone locked in physical space."""
 
     def __init__(
         self,
@@ -37,159 +36,84 @@ class FrozenMemory:
         x, y, bw, bh = bbox
         self.crop_bgra = person_bgra[y:y+bh, x:x+bw].copy()
 
-        # Feather bottom edge (4 pixels) to prevent harsh floating crop line
-        if bh > 8:
-            for r in range(min(5, bh)):
-                factor = r / 5.0
+        # Feather bottom edge (6px) to eliminate harsh crop lines
+        if bh > 10:
+            for r in range(min(6, bh)):
+                factor = r / 6.0
                 self.crop_bgra[bh - 1 - r, :, 3] = (
                     self.crop_bgra[bh - 1 - r, :, 3].astype(np.float32) * factor
                 ).astype(np.uint8)
 
-        self.origin_x = x
+        # ── Precise Spatial Anchoring: Lock clone exactly where visitor was standing ──
+        self.origin_x = float(x)
+        self.origin_y = float(y)
         self.width = bw
         self.height = bh
 
-        # ── Grounding: Anchor feet to the floor plane (no floating in mid-air) ──
-        floor_y = int(frame_h * 0.94)
-        if y + bh < floor_y:
-            # Shift vertically so feet touch the floor plane
-            self.origin_y = max(10, floor_y - bh)
-        else:
-            self.origin_y = y
-
-        # Reaction state
+        # Reaction / Motion offsets (strictly stationary)
         self.offset_x = 0.0
         self.offset_y = 0.0
         self.rotation = 0.0
         self.shake_intensity = 0.0
         self.reaction_label = ""
         self.reaction_time = 0.0
-        self.reaction_duration = 1.0
+        self.reaction_duration = 0.0
+        self.strike_count = 0
+        self.last_strike_time = 0.0
 
-        # Grab/move state
+        # Clone remains intact and stationary
+        self.is_shattered = False
+        self.shatter_finished = False
         self.is_grabbed = False
-        self.grab_offset_x = 0
-        self.grab_offset_y = 0
+        self.is_hover_target = False
 
     @property
     def center_x(self) -> int:
-        return self.origin_x + self.width // 2
+        return int(self.origin_x + self.width / 2.0)
 
     @property
     def center_y(self) -> int:
-        return self.origin_y + self.height // 2
+        return int(self.origin_y + self.height / 2.0)
 
-    @property
-    def foot_y(self) -> int:
-        return self.origin_y + self.height
-
-    def move_to(self, new_cx: int, new_cy: int):
-        """Move memory center to new position (for drag & drop)."""
-        self.origin_x = new_cx - self.width // 2
-        self.origin_y = new_cy - self.height // 2
-
-    def apply_reaction(self, kind: str, direction_x: float = 0, direction_y: float = 0):
-        """Trigger a reaction effect."""
-        if self.is_grabbed:
-            return
-        now = time.time()
-        self.reaction_time = now
-        self.reaction_label = kind
-
-        if kind == "PUNCH!":
-            self.offset_x = direction_x * 45
-            self.offset_y = -12
-            self.rotation = direction_x * 10
-            self.shake_intensity = 14.0
-            self.reaction_duration = 0.9
-        elif kind == "KICK!":
-            self.offset_x = direction_x * 55
-            self.offset_y = -20
-            self.rotation = direction_x * 14
-            self.shake_intensity = 18.0
-            self.reaction_duration = 1.0
-        elif kind == "TICKLE!":
-            self.shake_intensity = 8.0
-            self.offset_x = direction_x * 12
-            self.rotation = 0
-            self.reaction_duration = 1.5
-        elif kind == "TOUCH":
-            self.offset_x = direction_x * 10
-            self.offset_y = -5
-            self.shake_intensity = 3.0
-            self.reaction_duration = 0.7
+    def apply_strike(self, kind: str, direction_x: float = 0.0, direction_y: float = 0.0, force: float = 1.0) -> bool:
+        """Combat and touch disabled as of now — clone remains peacefully stationary."""
+        return False
 
     def update(self):
-        """Animate reaction decay."""
-        now = time.time()
-        elapsed = now - self.reaction_time
-
-        if self.reaction_label and elapsed > self.reaction_duration:
-            self.offset_x = 0
-            self.offset_y = 0
-            self.rotation = 0
-            self.shake_intensity = 0
-            self.reaction_label = ""
-        elif self.reaction_label:
-            self.offset_x *= 0.91
-            self.offset_y *= 0.91
-            self.rotation *= 0.89
-            self.shake_intensity *= 0.87
+        """No drift, no wobble — clone stays locked in place."""
+        pass
 
     def render_onto(self, canvas: np.ndarray, env_tint: Tuple[float, float, float] = (1.0, 1.0, 1.0)):
-        """Composite memory onto canvas with grounding and pseudo-3D effects."""
+        """Composite memory onto canvas with natural grounding and contact shadow."""
         ch, cw = canvas.shape[:2]
 
-        # Shake displacement (only during punch/kick reactions)
-        shake_x, shake_y = 0, 0
-        if self.shake_intensity > 0.5:
-            shake_x = int(np.random.uniform(-self.shake_intensity, self.shake_intensity))
-            shake_y = int(np.random.uniform(-self.shake_intensity * 0.4, self.shake_intensity * 0.4))
-
-        # Final position — stable, zero floating bobbing
-        dx = self.origin_x + int(self.offset_x) + shake_x
-        dy = self.origin_y + int(self.offset_y) + shake_y
+        dx = int(self.origin_x)
+        dy = int(self.origin_y)
 
         crop = self.crop_bgra.copy()
-        render_w = self.width
-        render_h = self.height
-
-        # Apply rotation (during punch/kick)
-        if abs(self.rotation) > 0.5:
-            rcx, rcy = render_w // 2, render_h // 2
-            M = cv2.getRotationMatrix2D((rcx, rcy), self.rotation, 1.0)
-            crop = cv2.warpAffine(crop, M, (render_w, render_h),
-                                  flags=cv2.INTER_LINEAR,
-                                  borderMode=cv2.BORDER_CONSTANT,
-                                  borderValue=(0, 0, 0, 0))
 
         # Environment lighting adaptation
         if env_tint != (1.0, 1.0, 1.0):
             tint_arr = np.array([env_tint[0], env_tint[1], env_tint[2]], dtype=np.float32)
             intensity = 0.20
             effective = (1.0 - intensity) + (tint_arr * intensity)
-            crop_float = crop[:, :, :3].astype(np.float32) * effective
-            crop[:, :, :3] = np.clip(crop_float, 0, 255).astype(np.uint8)
+            crop[:, :, :3] = np.clip(crop[:, :, :3].astype(np.float32) * effective, 0, 255).astype(np.uint8)
 
         mh, mw = crop.shape[:2]
 
-        # ── Realistic Ground Contact Shadow on the Floor ──
-        shadow_cx = dx + mw // 2 + int(self.offset_x * 0.3)
+        # ── Realistic Ground Contact Shadow under clone base ──
+        shadow_cx = dx + mw // 2
         shadow_cy = min(ch - 3, dy + mh - 2)
         shadow_w = int(mw * 0.38)
-        shadow_h = max(7, int(mh * 0.035))
+        shadow_h = max(6, int(mh * 0.035))
 
         if 0 < shadow_cy < ch and 0 < shadow_cx < cw:
             shadow_overlay = canvas.copy()
-            # Deep inner contact ellipse right at the ground plane
-            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy),
-                        (shadow_w, shadow_h), 0, 0, 360, (5, 5, 8), -1)
-            # Soft outer diffuse shadow
-            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy + 1),
-                        (int(shadow_w * 1.35), int(shadow_h * 1.6)), 0, 0, 360, (15, 15, 22), -1)
-            cv2.addWeighted(shadow_overlay, 0.45, canvas, 0.55, 0, canvas)
+            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy), (shadow_w, shadow_h), 0, 0, 360, (5, 5, 8), -1)
+            cv2.ellipse(shadow_overlay, (shadow_cx, shadow_cy + 1), (int(shadow_w * 1.35), int(shadow_h * 1.5)), 0, 0, 360, (15, 15, 22), -1)
+            cv2.addWeighted(shadow_overlay, 0.40, canvas, 0.60, 0, canvas)
 
-        # ── Clip and composite the memory ──
+        # ── Composite Memory Cutout ──
         src_x1 = max(0, -dx)
         src_y1 = max(0, -dy)
         dst_x1 = max(0, dx)
@@ -199,53 +123,16 @@ class FrozenMemory:
         dst_x2 = dst_x1 + (src_x2 - src_x1)
         dst_y2 = dst_y1 + (src_y2 - src_y1)
 
-        if src_x1 >= src_x2 or src_y1 >= src_y2:
-            return
-        if dst_x1 >= cw or dst_y1 >= ch:
-            return
-
-        patch = crop[src_y1:src_y2, src_x1:src_x2]
-        alpha = patch[:, :, 3:4].astype(np.float32) / 255.0
-        bgr = patch[:, :, :3].astype(np.float32)
-
-        roi = canvas[dst_y1:dst_y2, dst_x1:dst_x2].astype(np.float32)
-        blended = bgr * alpha + roi * (1.0 - alpha)
-        canvas[dst_y1:dst_y2, dst_x1:dst_x2] = blended.astype(np.uint8)
-
-        # ── Rim light (subtle edge glow for 3D presence) ──
-        if alpha.shape[0] > 2 and alpha.shape[1] > 2:
-            alpha_2d = alpha[:, :, 0]
-            edge = cv2.Canny((alpha_2d * 255).astype(np.uint8), 100, 200)
-            edge = cv2.dilate(edge, np.ones((2, 2), np.uint8))
-            edge_mask = edge > 0
-            rim_color = np.array([200, 210, 220], dtype=np.float32)
-            for c in range(3):
-                ch_slice = canvas[dst_y1:dst_y2, dst_x1:dst_x2, c].astype(np.float32)
-                ch_slice[edge_mask] = ch_slice[edge_mask] * 0.70 + rim_color[c] * 0.30
-                canvas[dst_y1:dst_y2, dst_x1:dst_x2, c] = np.clip(ch_slice, 0, 255).astype(np.uint8)
-
-        # ── Reaction label (fades upward on interaction) ──
-        if self.reaction_label:
-            elapsed = time.time() - self.reaction_time
-            if elapsed < self.reaction_duration:
-                label_y = dst_y1 - 15 - int(elapsed * 35)
-                label_x = self.center_x + int(self.offset_x) - 40
-
-                colors = {
-                    "PUNCH!": (0, 80, 255),
-                    "KICK!": (0, 140, 255),
-                    "TICKLE!": (0, 230, 180),
-                    "TOUCH": (220, 200, 180),
-                }
-                color = colors.get(self.reaction_label, (255, 255, 255))
-                if 20 < label_y < ch and 0 < label_x < cw - 100:
-                    cv2.putText(canvas, self.reaction_label,
-                                (label_x, label_y),
-                                cv2.FONT_HERSHEY_DUPLEX, 0.9, color, 2, cv2.LINE_AA)
+        if src_x1 < src_x2 and src_y1 < src_y2 and dst_x1 < cw and dst_y1 < ch:
+            patch = crop[src_y1:src_y2, src_x1:src_x2]
+            alpha = patch[:, :, 3:4].astype(np.float32) / 255.0
+            bgr = patch[:, :, :3].astype(np.float32)
+            roi = canvas[dst_y1:dst_y2, dst_x1:dst_x2].astype(np.float32)
+            canvas[dst_y1:dst_y2, dst_x1:dst_x2] = (bgr * alpha + roi * (1.0 - alpha)).astype(np.uint8)
 
 
 class MemoryManager:
-    """Manages all frozen memories."""
+    """Manages all frozen temporal clones in TimeSensei."""
 
     def __init__(self):
         self.memories: List[FrozenMemory] = []
@@ -253,16 +140,16 @@ class MemoryManager:
         self.grabbed_memory: Optional[FrozenMemory] = None
 
     def create_memory(self, frame_bgr: np.ndarray, alpha_mask: np.ndarray) -> Optional[FrozenMemory]:
-        """Create a frozen memory from the current frame and mask, grounded to the floor."""
+        """Create a frozen clone from the current frame and mask, locked to its exact physical position."""
         h, w = frame_bgr.shape[:2]
 
-        binary = (alpha_mask > 0.3).astype(np.uint8)
+        binary = (alpha_mask > 0.30).astype(np.uint8)
         contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if not contours:
             return None
 
         largest = max(contours, key=cv2.contourArea)
-        if cv2.contourArea(largest) < 5000:
+        if cv2.contourArea(largest) < 4500:
             return None
 
         x, y, bw, bh = cv2.boundingRect(largest)
@@ -275,6 +162,10 @@ class MemoryManager:
         bgra = np.zeros((h, w, 4), dtype=np.uint8)
         bgra[:, :, :3] = frame_bgr
         bgra[:, :, 3] = (np.clip(alpha_mask, 0, 1) * 255).astype(np.uint8)
+
+        # Enforce MAX_MEMORIES cap: Evict oldest if ceiling reached
+        if len(self.memories) >= settings.MAX_MEMORIES:
+            self.memories.pop(0)
 
         memory = FrozenMemory(
             person_bgra=bgra,
@@ -289,6 +180,7 @@ class MemoryManager:
         return memory
 
     def update_all(self):
+        """Update all active clones."""
         for m in self.memories:
             m.update()
 
@@ -296,41 +188,29 @@ class MemoryManager:
         for m in self.memories:
             m.render_onto(canvas, env_tint)
 
-    def find_closest_memory(self, px: int, py: int, max_dist: float = 150) -> Optional[FrozenMemory]:
+    def find_closest_memory(self, px: int, py: int, max_dist: float = 140.0) -> Optional[FrozenMemory]:
         best = None
         best_dist = max_dist
         for m in self.memories:
-            dist = np.hypot(px - m.center_x, py - m.center_y)
+            dist = math.hypot(px - m.center_x, py - m.center_y)
             if dist < best_dist:
                 best_dist = dist
                 best = m
         return best
 
+    def update_hover_targets(self, hand_positions: List[Tuple[int, int]]):
+        """Hover target disabled."""
+        pass
+
     def try_grab(self, hand_x: int, hand_y: int) -> bool:
-        """Try to grab the closest memory near the hand position."""
-        mem = self.find_closest_memory(hand_x, hand_y, max_dist=100)
-        if mem and not mem.is_grabbed:
-            mem.is_grabbed = True
-            mem.grab_offset_x = mem.origin_x - hand_x
-            mem.grab_offset_y = mem.origin_y - hand_y
-            self.grabbed_memory = mem
-            return True
+        """Grab disabled — clones stay stationary."""
         return False
 
     def drag(self, hand_x: int, hand_y: int):
-        """Move the grabbed memory horizontally and vertically following the hand."""
-        if self.grabbed_memory and self.grabbed_memory.is_grabbed:
-            self.grabbed_memory.origin_x = hand_x + self.grabbed_memory.grab_offset_x
-            self.grabbed_memory.origin_y = hand_y + self.grabbed_memory.grab_offset_y
+        pass
 
     def release(self):
-        """Release the grabbed memory at its current horizontal position and ground it to floor."""
-        if self.grabbed_memory:
-            floor_y = int(self.grabbed_memory.frame_h * 0.94)
-            # Ensure it snaps down firmly to the floor plane upon release
-            self.grabbed_memory.origin_y = max(10, floor_y - self.grabbed_memory.height)
-            self.grabbed_memory.is_grabbed = False
-            self.grabbed_memory = None
+        self.grabbed_memory = None
 
     def clear_all(self):
         self.memories.clear()

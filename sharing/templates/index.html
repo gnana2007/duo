@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Mirror World - Your Memory</title>
+  <title>TimeSensei — Your Temporal Capture</title>
   <style>
     :root {
-      --bg: #0b0d14;
-      --card-bg: rgba(26, 31, 46, 0.85);
-      --accent: #00f2fe;
-      --accent-grad: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+      --bg: #090a0f;
+      --card-bg: rgba(18, 20, 28, 0.88);
+      --crimson: #c51b2f;
+      --crimson-grad: linear-gradient(135deg, #e52d3d 0%, #a01424 100%);
       --whatsapp: #25D366;
-      --text: #f0f4f8;
-      --text-muted: #8e9bb0;
+      --text: #f4f2eb;
+      --text-muted: #8d95a5;
     }
     * {
       box-sizing: border-box;
@@ -22,49 +22,52 @@
     }
     body {
       background-color: var(--bg);
-      background-image: radial-gradient(circle at 50% 0%, #1e2840 0%, #0b0d14 75%);
+      background-image: radial-gradient(circle at 50% 0%, #1f1822 0%, #090a0f 75%);
       color: var(--text);
       min-height: 100vh;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 24px 16px 40px;
+      padding: 28px 16px 40px;
     }
     .header {
       text-align: center;
-      margin-bottom: 20px;
+      margin-bottom: 22px;
     }
     .badge {
       display: inline-block;
       font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 1.5px;
-      padding: 4px 12px;
+      letter-spacing: 1.8px;
+      padding: 5px 14px;
       border-radius: 20px;
-      background: rgba(0, 242, 254, 0.15);
-      color: var(--accent);
-      border: 1px solid rgba(0, 242, 254, 0.3);
+      background: rgba(197, 27, 47, 0.18);
+      color: #ff4d61;
+      border: 1px solid rgba(197, 27, 47, 0.4);
       margin-bottom: 8px;
     }
     h1 {
-      font-size: 24px;
-      font-weight: 700;
+      font-size: 28px;
+      font-weight: 800;
       letter-spacing: -0.5px;
+      color: var(--text);
     }
     p.subtitle {
-      font-size: 14px;
+      font-size: 13px;
       color: var(--text-muted);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
       margin-top: 4px;
     }
     .photo-card {
       width: 100%;
       max-width: 520px;
       background: var(--card-bg);
-      border: 1px solid rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.12);
       border-radius: 20px;
       overflow: hidden;
-      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.05);
       backdrop-filter: blur(16px);
       margin-bottom: 24px;
     }
@@ -81,10 +84,11 @@
       display: block;
     }
     .card-body {
-      padding: 18px 20px;
+      padding: 16px 20px;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
     }
     .photo-info {
       font-size: 13px;
@@ -123,9 +127,9 @@
       opacity: 0.9;
     }
     .btn-download {
-      background: var(--accent-grad);
-      color: #03101c;
-      box-shadow: 0 4px 20px rgba(0, 242, 254, 0.35);
+      background: var(--crimson-grad);
+      color: #ffffff;
+      box-shadow: 0 4px 20px rgba(197, 27, 47, 0.4);
     }
     .btn-whatsapp {
       background: #25D366;
@@ -133,94 +137,97 @@
       box-shadow: 0 4px 20px rgba(37, 211, 102, 0.35);
     }
     .btn-share {
-      background: rgba(255, 255, 255, 0.12);
+      background: rgba(255, 255, 255, 0.10);
       color: var(--text);
       border: 1px solid rgba(255, 255, 255, 0.15);
     }
     .footer {
-      margin-top: 30px;
+      margin-top: 32px;
       font-size: 12px;
-      color: var(--text-muted);
+      color: #656d80;
       text-align: center;
-    }
-    svg {
-      width: 20px;
-      height: 20px;
-      fill: currentColor;
     }
   </style>
 </head>
 <body>
+
   <div class="header">
-    <div class="badge">Interactive Mirror World</div>
-    <h1>Your Virtual Photo</h1>
-    <p class="subtitle">Captured live inside the virtual environment</p>
+    <div class="badge">Temporal Capture</div>
+    <h1>TimeSensei</h1>
+    <p class="subtitle">Control Your Timeline</p>
   </div>
 
   <div class="photo-card">
     <div class="img-container">
-      <img src="/image/{{ photo_id }}" alt="Mirror World Photo" id="photoImg">
+      <img src="/image/{{ photo_id }}" alt="TimeSensei Temporal Capture" id="temporalPhoto">
     </div>
     <div class="card-body">
       <div class="photo-info">
-        <strong>Studio Portrait</strong>
+        <strong>Temporal Echo</strong>
         <span>{{ photo_id }}</span>
       </div>
     </div>
   </div>
 
   <div class="actions">
-    <!-- Download Button -->
+    <!-- Download to Phone -->
     <a href="/download/{{ photo_id }}" class="btn btn-download" download>
-      <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="7 10 12 15 17 10"></polyline>
+        <line x1="12" y1="15" x2="12" y2="3"></line>
+      </svg>
       Save Photo to Phone
     </a>
 
-    <!-- Share to WhatsApp Button -->
-    <button class="btn btn-whatsapp" onclick="shareWhatsApp()">
-      <svg viewBox="0 0 24 24"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91C2.13 13.66 2.59 15.36 3.45 16.86L2.05 22L7.3 20.62C8.75 21.41 10.38 21.83 12.04 21.83C17.5 21.83 21.95 17.38 21.95 11.92C21.95 9.27 20.92 6.78 19.05 4.91C17.18 3.03 14.69 2 12.04 2M12.05 3.67C14.25 3.67 16.31 4.53 17.87 6.09C19.42 7.65 20.28 9.72 20.28 11.92C20.28 16.46 16.58 20.15 12.04 20.15C10.56 20.15 9.11 19.76 7.85 19L7.55 18.83L4.43 19.65L5.26 16.61L5.06 16.29C4.24 15 3.8 13.47 3.8 11.91C3.81 7.37 7.5 3.67 12.05 3.67Z"/></svg>
+    <!-- Direct WhatsApp Share -->
+    <a href="#" id="whatsappBtn" class="btn btn-whatsapp" target="_blank" rel="noopener">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.711 2.598 2.664-.698c.969.585 1.961.897 3.003.897 3.18 0 5.767-2.586 5.768-5.766.001-3.181-2.586-5.768-5.77-5.768zm3.287 8.243c-.144.405-.838.774-1.17.828-.311.05-.705.08-2.072-.487-1.579-.654-2.583-2.28-2.66-2.385-.078-.105-.639-.851-.639-1.624 0-.773.405-1.153.549-1.309.144-.156.315-.195.421-.195.105 0 .21.001.303.006.098.005.23-.037.36.275.144.346.49 1.196.533 1.283.043.088.072.19.014.304-.058.115-.087.186-.173.287-.086.101-.182.226-.26.303-.087.087-.177.182-.076.356.101.173.449.741.963 1.199.662.59 1.22.773 1.393.859.173.086.275.072.376-.043.101-.115.433-.505.549-.679.115-.173.231-.144.39-.086.159.058 1.011.477 1.184.563.173.087.289.13.332.203.043.072.043.419-.101.824z"/>
+      </svg>
       Share to WhatsApp
-    </button>
+    </a>
 
-    <!-- Native Mobile Web Share -->
-    <button class="btn btn-share" onclick="nativeShare()">
-      <svg viewBox="0 0 24 24"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92s2.92-1.31 2.92-2.92c0-1.61-1.31-2.92-2.92-2.92z"/></svg>
-      More Sharing Options
+    <!-- Native Web Share if available -->
+    <button id="nativeShareBtn" class="btn btn-share" style="display: none;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="18" cy="5" r="3"></circle>
+        <circle cx="6" cy="12" r="3"></circle>
+        <circle cx="18" cy="19" r="3"></circle>
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"></line>
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"></line>
+      </svg>
+      More Options
     </button>
   </div>
 
   <div class="footer">
-    Interactive Mirror World &copy; 2026
+    Captured with TimeSensei • Control Your Timeline
   </div>
 
   <script>
-    const photoUrl = window.location.href;
-    const downloadUrl = window.location.origin + '/download/{{ photo_id }}';
+    const currentUrl = window.location.href;
+    const shareText = "Check out my temporal capture from TimeSensei: Control Your Timeline! " + currentUrl;
+    
+    // Configure WhatsApp URL
+    const waUrl = "https://api.whatsapp.com/send?text=" + encodeURIComponent(shareText);
+    document.getElementById("whatsappBtn").href = waUrl;
 
-    function shareWhatsApp() {
-      const text = encodeURIComponent("Check out my photo from the Interactive Mirror World! " + photoUrl);
-      window.location.href = "whatsapp://send?text=" + text;
-      // Fallback web WhatsApp if app is not installed
-      setTimeout(() => {
-        window.open("https://api.whatsapp.com/send?text=" + text, "_blank");
-      }, 500);
-    }
-
-    async function nativeShare() {
-      if (navigator.share) {
+    // Show native share if supported
+    if (navigator.share) {
+      const shareBtn = document.getElementById("nativeShareBtn");
+      shareBtn.style.display = "flex";
+      shareBtn.addEventListener("click", async () => {
         try {
           await navigator.share({
-            title: "My Mirror World Photo",
-            text: "Look at my virtual world photo!",
-            url: photoUrl
+            title: "TimeSensei Temporal Capture",
+            text: "Check out my temporal capture from TimeSensei: Control Your Timeline!",
+            url: currentUrl
           });
         } catch (err) {
-          console.log("Share dismissed or failed", err);
+          console.log("Share cancelled or failed");
         }
-      } else {
-        navigator.clipboard.writeText(photoUrl);
-        alert("Link copied to clipboard!");
-      }
+      });
     }
   </script>
 </body>

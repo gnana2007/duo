@@ -38,8 +38,8 @@ class EnvironmentManager:
         placeholder = np.zeros((self.height, self.width, 3), dtype=np.uint8)
         self.environments.append(Environment(
             id="original_room",
-            name="Original Room",
-            accent_color_bgr=(200, 200, 200),
+            name="Present Reality",
+            accent_color_bgr=(180, 190, 200),
             ambient_tint_bgr=(1.0, 1.0, 1.0),
             brightness_multiplier=1.0,
             contrast_multiplier=1.0,
@@ -53,68 +53,113 @@ class EnvironmentManager:
     def _load_or_generate_environments(self):
         env_configs = [
             {
-                "id": "interactive_room",
-                "name": "Interactive Room",
-                "accent": (220, 180, 100),
+                "id": "haunted_castle",
+                "name": "Haunted Castle",
+                "files": ["haunted_castle.jpg", "haunted_room.png"],
+                "accent": (40, 45, 190),
+                "tint": (0.85, 0.85, 0.92),
+                "brightness": 0.88,
+                "contrast": 1.18,
+                "generator": self._generate_haunted,
+            },
+            {
+                "id": "cyberpunk",
+                "name": "Cyberpunk Metropolis",
+                "files": ["cyberpunk_loft.png", "neon_metropolis.jpg"],
+                "accent": (240, 60, 220),
+                "tint": (1.15, 0.90, 1.15),
+                "brightness": 1.05,
+                "contrast": 1.15,
+                "generator": self._generate_arena,
+            },
+            {
+                "id": "sunlit_penthouse",
+                "name": "Luxury Penthouse",
+                "files": ["sunlit_penthouse.png"],
+                "accent": (80, 190, 240),
                 "tint": (0.95, 1.05, 1.10),
                 "brightness": 1.05,
                 "contrast": 1.05,
                 "generator": self._generate_interactive_room,
             },
             {
-                "id": "space",
-                "name": "Deep Space",
-                "accent": (240, 100, 160),
+                "id": "space_nebula",
+                "name": "Cosmic Nebula",
+                "files": ["space_nebula.jpg", "space.png"],
+                "accent": (220, 100, 180),
                 "tint": (1.20, 0.85, 1.15),
                 "brightness": 0.95,
-                "contrast": 1.15,
+                "contrast": 1.20,
                 "generator": self._generate_space,
             },
             {
-                "id": "haunted_room",
-                "name": "Haunted Room",
-                "accent": (80, 100, 60),
-                "tint": (0.90, 0.85, 0.80),
-                "brightness": 0.80,
-                "contrast": 1.20,
-                "generator": self._generate_haunted,
+                "id": "tropical_beach",
+                "name": "Sunset Beach",
+                "files": ["tropical_beach.jpg"],
+                "accent": (60, 180, 255),
+                "tint": (0.90, 1.05, 1.15),
+                "brightness": 1.05,
+                "contrast": 1.05,
+                "generator": self._generate_interactive_room,
             },
             {
-                "id": "game_arena",
-                "name": "Game Arena",
-                "accent": (255, 200, 0),
-                "tint": (1.20, 1.10, 0.90),
-                "brightness": 1.08,
-                "contrast": 1.15,
+                "id": "zen_sanctuary",
+                "name": "Zen Sanctuary",
+                "files": ["zen_sanctuary.png"],
+                "accent": (80, 210, 120),
+                "tint": (0.95, 1.08, 1.02),
+                "brightness": 1.02,
+                "contrast": 1.05,
+                "generator": self._generate_interactive_room,
+            },
+            {
+                "id": "mystic_forest",
+                "name": "Mystic Forest",
+                "files": ["mystic_forest.jpg"],
+                "accent": (60, 190, 140),
+                "tint": (0.90, 1.10, 0.95),
+                "brightness": 0.95,
+                "contrast": 1.10,
+                "generator": self._generate_interactive_room,
+            },
+            {
+                "id": "gallery_studio",
+                "name": "Modern Gallery",
+                "files": ["gallery_studio.png"],
+                "accent": (220, 220, 230),
+                "tint": (1.0, 1.0, 1.0),
+                "brightness": 1.0,
+                "contrast": 1.05,
                 "generator": self._generate_arena,
             },
         ]
 
         for cfg in env_configs:
-            file_path = settings.ENVIRONMENTS_DIR / f"{cfg['id']}.png"
-            if file_path.exists():
-                img = cv2.imread(str(file_path))
-                if img is not None and img.shape[1] == self.width and img.shape[0] == self.height:
-                    self.environments.append(Environment(
-                        id=cfg["id"], name=cfg["name"],
-                        accent_color_bgr=cfg["accent"],
-                        ambient_tint_bgr=cfg["tint"],
-                        brightness_multiplier=cfg["brightness"],
-                        contrast_multiplier=cfg["contrast"],
-                        image=img,
-                    ))
-                    continue
+            loaded_img = None
+            for fn in cfg.get("files", [f"{cfg['id']}.png"]):
+                fp = settings.ENVIRONMENTS_DIR / fn
+                if fp.exists():
+                    img = cv2.imread(str(fp))
+                    if img is not None:
+                        if img.shape[1] != self.width or img.shape[0] != self.height:
+                            img = cv2.resize(img, (self.width, self.height), interpolation=cv2.INTER_LINEAR)
+                        loaded_img = img
+                        break
 
-            print(f"[EnvManager] Generating: {cfg['name']}...")
-            img = cfg["generator"]()
-            cv2.imwrite(str(file_path), img)
+            if loaded_img is None:
+                print(f"[EnvManager] Generating procedural fallback: {cfg['name']}...")
+                loaded_img = cfg["generator"]()
+                fallback_path = settings.ENVIRONMENTS_DIR / f"{cfg['id']}.png"
+                cv2.imwrite(str(fallback_path), loaded_img)
+
             self.environments.append(Environment(
-                id=cfg["id"], name=cfg["name"],
+                id=cfg["id"],
+                name=cfg["name"],
                 accent_color_bgr=cfg["accent"],
                 ambient_tint_bgr=cfg["tint"],
                 brightness_multiplier=cfg["brightness"],
                 contrast_multiplier=cfg["contrast"],
-                image=img,
+                image=loaded_img,
             ))
 
     def current(self) -> Environment:

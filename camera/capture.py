@@ -23,9 +23,17 @@ class CameraStream:
         self._init_camera()
 
     def _init_camera(self):
-        # Try DirectShow first on Windows for faster initialization, then default
-        cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
-        if not cap.isOpened():
+        import platform
+        sys_name = platform.system()
+        if sys_name == "Windows":
+            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_DSHOW)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(self.camera_index)
+        elif sys_name == "Darwin":
+            cap = cv2.VideoCapture(self.camera_index, cv2.CAP_AVFOUNDATION)
+            if not cap.isOpened():
+                cap = cv2.VideoCapture(self.camera_index)
+        else:
             cap = cv2.VideoCapture(self.camera_index)
         
         if cap.isOpened():
