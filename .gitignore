@@ -32,3 +32,6 @@ captures/*.jpg
 .DS_Store
 .vscode/
 .idea/
+
+# Rust build target
+target/

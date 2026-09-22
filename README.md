@@ -158,20 +158,24 @@ duo/
 
 ## 🚀 Quickstart & Setup
 
-### 1. Prerequisites
-- Python 3.10, 3.11, or 3.12 (64-bit)
-- Standard USB webcam or built-in camera
+### Option A: High-Performance Native Rust (Recommended)
+TimeSensei is fully ported to native Rust for ultra-low latency, blazing 60+ FPS execution, and instant standalone deployment.
 
-### 2. Install Dependencies
+```bash
+# Run release build with Cargo
+cargo run --release
+
+# Run automated verification test suite
+cargo test --test verify_all
+```
+The optimized native executable is located at `target/release/timesensei.exe`.
+
+### Option B: Python Edition
 ```bash
 pip install -r requirements.txt
-```
-*(Packages: `opencv-python`, `mediapipe`, `numpy`, `pillow`, `qrcode`, `flask`, `scipy`, `sounddevice`)*
-
-### 3. Run TimeSensei
-```bash
 python main.py
 ```
+*(Packages: `opencv-python`, `mediapipe`, `numpy`, `pillow`, `qrcode`, `flask`, `scipy`, `sounddevice`)*
 
 ---
 

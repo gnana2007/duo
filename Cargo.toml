@@ -1,0 +1,26 @@
+[package]
+name = "timesensei"
+version = "1.0.0"
+edition = "2021"
+authors = ["TimeSensei Team"]
+description = "TimeSensei: CONTROL YOUR TIMELINE - High-performance Rust gesture installation"
+
+[dependencies]
+image = { version = "0.25", features = ["jpeg", "png"] }
+imageproc = "0.25"
+qrcode = { version = "0.14", default-features = false }
+tokio = { version = "1.38", features = ["full"] }
+axum = { version = "0.7" }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+minifb = "0.27"
+rayon = "1.10"
+local-ip-address = "0.6"
+chrono = "0.4"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+panic = "abort"
